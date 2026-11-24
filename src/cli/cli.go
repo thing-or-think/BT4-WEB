@@ -80,6 +80,12 @@ func newApp() *cli.App {
    Store files for later download:
       croc store --downloads 3 --expiration 3d file.txt
 
+   Sync a folder, sending only new or changed files:
+      croc sync ./photos
+
+   Join a folder sync on the target computer:
+      CROC_SECRET=code-phrase croc sync ./photos-copy
+
    Share a terminal:
       croc ssh
 
@@ -142,6 +148,7 @@ func newApp() *cli.App {
 			HelpName: "croc ssh",
 			Action:   sshSession,
 		},
+		syncCommand(),
 		{
 			Name:        "update",
 			Aliases:     []string{"upgrade"},

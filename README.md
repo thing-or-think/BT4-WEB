@@ -260,6 +260,35 @@ See the
 [SSH sharing design and security guide](src/docs/SSH_SHARING.md) for protocol,
 reconnection, platform, relay, and threat-model details.
 
+### Sync a folder with `croc sync`
+
+`croc sync` keeps a folder on another computer up to date. It is one-way
+(source → target) and only sends new or changed files; unchanged files are
+skipped. On the source computer, run:
+
+```bash
+croc sync ./photos
+```
+
+On the target computer, join with the code that croc prints:
+
+```bash
+CROC_SECRET='code-phrase' croc sync ./photos-copy
+```
+
+Useful options on the source computer:
+
+```bash
+croc sync --dry-run ./photos   # show what would be added, updated or deleted
+croc sync --delete ./photos    # also delete extra files in the target (asks first)
+croc sync --watch ./photos     # keep syncing as files change, Ctrl+C to stop
+```
+
+The plan labels every item as `+ add`, `~ update`, `- delete`, or `= skip`.
+Deletions require confirmation unless `--yes` is given. See the
+[folder sync guide](src/docs/FOLDER_SYNC.md) (Vietnamese) for all options,
+output, exit codes, and safety rules.
+
 ### Customizations & Options
 
 #### Encrypted temporary storage
