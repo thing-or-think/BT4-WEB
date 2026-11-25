@@ -10,6 +10,9 @@ test-fixtures/
 .env.*
 !.env.example
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 public/croc.wasm
 public/croc-ssh.wasm
 public/wasm_exec.js
