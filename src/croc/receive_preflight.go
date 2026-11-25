@@ -43,7 +43,7 @@ func (c *Client) preflightReceiveFile(index int) (receiveDecision, error) {
 	}
 	matches := false
 	if exists && file.Size > 0 && file.Symlink == "" && stat.Mode().IsRegular() && stat.Size() == file.Size {
-		hash, err := receiveFileHash(c.clientContext(), destination, c.Options.HashAlgorithm, !c.Options.SendingText)
+		hash, err := receiveFileHash(c.clientContext(), c.receiveDiskPath(destination), c.Options.HashAlgorithm, !c.Options.SendingText)
 		if err != nil {
 			return receiveDecision{}, fmt.Errorf("hash existing destination %q: %w", destination, err)
 		}
@@ -56,7 +56,7 @@ func (c *Client) preflightReceiveFile(index int) (receiveDecision, error) {
 			case pending:
 				return receiveDecision{pending: true}, nil
 			default:
-				if err := c.beginExactHash(index, destination); err != nil {
+				if err := c.beginExactHash(index, c.receiveDiskPath(destination)); err != nil {
 					return receiveDecision{}, err
 				}
 				return receiveDecision{pending: true}, nil
@@ -100,7 +100,7 @@ func (c *Client) preflightReceiveFile(index int) (receiveDecision, error) {
 		return receiveDecision{requested: true, fresh: true}, nil
 	}
 	if exists && !textArtifact && !c.Options.Overwrite && !c.Options.Rename && !c.receiveChoices[index] {
-		accepted, err := askReceiveOverwrite(c.clientContext(), file, file.Size > 0 && file.Symlink == "" && stat.Mode().IsRegular())
+		accepted, err := askReceiveOverwriteIn(c.clientContext(), c.receiveRootDir(), file, file.Size > 0 && file.Symlink == "" && stat.Mode().IsRegular())
 		if err != nil {
 			return receiveDecision{}, err
 		}

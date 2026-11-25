@@ -211,6 +211,9 @@ func (c *Client) activateSecureChannel(attempt *transferAttemptState) (err error
 
 func (c *Client) pakeFeatures() []string {
 	features := []string{inlinePeerMetadataFeature, progressiveFileHashFeature, chunkedFileInfoFeature, stagedTransportFeature, implicitTailcatReadyFeature, bundle.Feature, bundle.NativeFeature}
+	if hook := c.Options.SyncHook; hook != nil {
+		features = append(features, hook.Feature())
+	}
 	if !c.localTailcatSupported() {
 		return features
 	}

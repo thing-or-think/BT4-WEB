@@ -13,6 +13,9 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+coverage.txt
+coverage.html
+*.prof
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -23,6 +26,33 @@ go.work.sum
 
 # Environment variables file
 .env
+.env.*
+!.env.example
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Python artifacts (scripts/ & packaging/)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Microsoft Office temporary lock files
+~$*.docx
+~$*.xlsx
+~$*.pptx
 
 # Browser automation debug artifacts
 /.playwright-mcp/
@@ -35,7 +65,6 @@ croc_v*
 bin/
 src/croc/test-*
 tmp/
-.DS_STORE
 
 # Generated only when building the standalone croc-web binary.
 /src/webassets/dist/*

@@ -133,6 +133,13 @@ type Options struct {
 	ExtendedClipboard bool
 	NoUpdateCheck     bool
 	Transport         TransportMode `json:",omitempty"`
+	// ReceiveRoot is the directory a receiver writes into. Empty keeps the
+	// historical behavior of writing relative to the process working directory.
+	// Setting it lets several receivers run in one process without os.Chdir.
+	ReceiveRoot string `json:"-"`
+	// SyncHook, when set on both peers, runs folder-sync negotiation between
+	// PAKE and file metadata. Nil keeps ordinary send/receive unchanged.
+	SyncHook SyncHook `json:"-"`
 }
 
 // TransportMode controls how a sender selects the file-data connection after
@@ -254,6 +261,7 @@ type Client struct {
 	peerStagedTransport        bool
 	peerImplicitTailcatReady   bool
 	incomingFileManifest       *incomingFileManifest
+	sync                       syncHookState
 	tailcat                    tailcatClientState
 	transportSelectionReceived bool
 	selectedDataTransport      atomic.Int32
@@ -984,12 +992,32 @@ func (c *Client) receiveFilesystem() (*receivefs.Root, error) {
 	if c.receiveRoot != nil {
 		return c.receiveRoot, nil
 	}
-	root, err := receivefs.OpenRoot(".")
+	root, err := receivefs.OpenRoot(c.receiveRootDir())
 	if err != nil {
 		return nil, err
 	}
 	c.receiveRoot = root
 	return root, nil
+}
+
+func (c *Client) receiveRootDir() string {
+	if c.Options.ReceiveRoot == "" {
+		return "."
+	}
+	return c.Options.ReceiveRoot
+}
+
+// receiveDiskPath maps a validated slash-separated receive path to an OS path
+// below the receive root, for helpers that do not accept a receivefs.Root.
+func (c *Client) receiveDiskPath(name string) string {
+	return receiveDiskPathIn(c.receiveRootDir(), name)
+}
+
+func receiveDiskPathIn(rootDir, name string) string {
+	if rootDir == "." {
+		return name
+	}
+	return filepath.Join(rootDir, filepath.FromSlash(name))
 }
 
 func (c *Client) closeReceiveFilesystem() {
@@ -1814,7 +1842,24 @@ func (c *Client) Send(filesInfo []FileInfo, emptyFoldersToTransfer []FileInfo, t
 	c.tailcat.transferBytes.Store(totalLogicalTransferSize(filesInfo))
 	c.startTailcatPreparation()
 	hashResult := make(chan error, 1)
+	if c.Options.SyncHook != nil {
+		c.sync.files = make(chan syncSelection, 1)
+	}
 	go func() {
+		if c.Options.SyncHook != nil {
+			// transferBytes above is the upper bound used for transport choice;
+			// only the files the hook keeps are hashed and sent.
+			select {
+			case selection := <-c.sync.files:
+				filesInfo = selection.files
+				c.EmptyFoldersToTransfer = selection.emptyFolders
+				c.TotalNumberOfContents = len(filesInfo)
+			case <-c.stop.ctx.Done():
+				c.finishFilePreparation(c.stop.ctx.Err())
+				hashResult <- c.stop.ctx.Err()
+				return
+			}
+		}
 		prepareErr := c.sendCollectFiles(filesInfo)
 		c.finishFilePreparation(prepareErr)
 		hashResult <- prepareErr
@@ -2724,7 +2769,7 @@ func (c *Client) processSenderInfo(senderInfo SenderInfo) (done bool, err error)
 				return
 			}
 		} else {
-			isEmpty, _ := isEmptyFolder(c.EmptyFoldersToTransfer[i].FolderRemote)
+			isEmpty, _ := isEmptyFolder(c.receiveDiskPath(c.EmptyFoldersToTransfer[i].FolderRemote))
 			if !isEmpty {
 				log.Debug("asking to overwrite")
 				output, colorEnabled := termui.Output(os.Stderr)
@@ -2797,6 +2842,9 @@ func (c *Client) processMessagePake(m message.Message, attempt *transferAttemptS
 	c.peerImplicitTailcatReady = supportsFeature(m.Features, implicitTailcatReadyFeature)
 	c.bundles.peerHandshake = supportsFeature(m.Features, bundle.Feature)
 	c.bundles.peerNative = c.bundles.peerHandshake && supportsFeature(m.Features, bundle.NativeFeature)
+	if hook := c.Options.SyncHook; hook != nil {
+		c.sync.peerFeature = supportsFeature(m.Features, hook.Feature())
+	}
 	if c.pakeConfirmationPending || c.Key != nil {
 		return pakeHandshakeError{err: fmt.Errorf("unexpected duplicate PAKE payload")}
 	}
@@ -3217,6 +3265,10 @@ func (c *Client) processMessage(payload []byte, attempt *transferAttemptState) (
 			state.FileTransferred = false
 			state.RecipientRequested = false
 		})
+	default:
+		if isSyncMessage(m.Type) {
+			err = c.handleSyncMessage(m)
+		}
 	}
 	if err != nil {
 		log.Debugf("got error from processing message: %v", c.redactError(err))
@@ -3323,7 +3375,7 @@ func (c *Client) recipientInitializeFile() (err error) {
 			// recipient requests the file and chunks (if empty, then should receive all chunks)
 			// TODO: determine the missing chunks
 			c.CurrentFileChunkRanges = utils.MissingChunks(
-				pathToFile,
+				c.receiveDiskPath(pathToFile),
 				c.FilesToTransfer[c.FilesToTransferCurrentNum].Size,
 				models.TCP_BUFFER_SIZE/2,
 			)
@@ -3495,12 +3547,16 @@ var receiveFileHash = utils.HashFileCtx
 var receiveOverwriteInput = utils.GetInputContext
 
 func askReceiveOverwrite(ctx context.Context, fileInfo FileInfo, resumable bool) (bool, error) {
+	return askReceiveOverwriteIn(ctx, ".", fileInfo, resumable)
+}
+
+func askReceiveOverwriteIn(ctx context.Context, rootDir string, fileInfo FileInfo, resumable bool) (bool, error) {
 	action := "Overwrite"
 	promptDetail := ""
 	promptSpacing := " "
 	if resumable {
 		missingRanges := utils.MissingChunks(
-			path.Join(fileInfo.FolderRemote, fileInfo.Name),
+			receiveDiskPathIn(rootDir, path.Join(fileInfo.FolderRemote, fileInfo.Name)),
 			fileInfo.Size,
 			models.TCP_BUFFER_SIZE/2,
 		)
@@ -3606,6 +3662,12 @@ func (c *Client) fmtPrintUpdate() {
 }
 
 func (c *Client) updateState(attempt *transferAttemptState) (err error) {
+	if err = c.updateSyncHook(); err != nil {
+		return
+	}
+	if c.Options.SyncHook != nil && c.Options.IsSender && !c.sync.planned {
+		return nil
+	}
 	err = c.updateIfSenderChannelSecured()
 	if err != nil {
 		return
