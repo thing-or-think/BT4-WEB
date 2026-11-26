@@ -168,7 +168,7 @@ func validateEntryShape(e Entry) error {
 
 func validateSkipped(s SkippedPath) error {
 	switch s.Reason {
-	case SkipFiltered, SkipSymlink, SkipReadError:
+	case SkipFiltered, SkipSymlink, SkipReadError, SkipSpecial:
 	case SkipInvalidName:
 		if s.Path == "" {
 			return nil

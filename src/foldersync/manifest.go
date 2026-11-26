@@ -29,6 +29,7 @@ const (
 	SkipSymlink     SkipReason = "symlink"      // Symlink (bản đầu không đi theo symlink)
 	SkipInvalidName SkipReason = "invalid_name" // Tên không hợp lệ đa nền tảng (VD: CON, chứa ':', kết thúc bằng '.')
 	SkipReadError   SkipReason = "read_error"   // Lỗi đọc quyền / file thay đổi lúc đang quét
+	SkipSpecial     SkipReason = "special"      // Tệp đặc biệt (pipe, socket, thiết bị...) không đồng bộ được
 )
 
 // SkippedPath lưu một đường dẫn bị bỏ qua để báo cáo và bảo vệ khỏi --delete ở máy đích.
