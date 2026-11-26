@@ -116,7 +116,11 @@ type Plan struct {
 	Update []Change `json:"update,omitempty"`
 	Touch  []Change `json:"touch,omitempty"` // Chỉ cập nhật ModTime/Mode, không truyền lại dữ liệu
 	Skip   []Change `json:"skip,omitempty"`
-	Delete []Change `json:"delete,omitempty"`
+	Delete []Change `json:"delete,omitempty"` // Đã xếp sâu trước nông
+
+	// Conflicts là thay đổi không thực hiện được an toàn (ví dụ thay thư mục đích còn
+	// mục con bằng tệp khi --delete tắt). Không làm thay đổi đĩa đích.
+	Conflicts []Change `json:"conflicts,omitempty"`
 
 	// Thông tin an toàn của luật xóa (mục 2.4).
 	DeleteBlockedReason  string `json:"delete_blocked_reason,omitempty"`  // Khác rỗng nếu xóa bị chặn toàn lượt
