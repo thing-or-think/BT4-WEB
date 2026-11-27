@@ -70,3 +70,7 @@ tmp/
 /src/webassets/dist/*
 !/src/webassets/dist/.gitkeep
 croc2
+
+# Tài liệu kế hoạch cục bộ
+Ke_Hoach_Chi_Tiet_Folder_Sync.md
+Ke_Hoach_Phan_Cong_Dong_Bo_Thu_Muc.docx
