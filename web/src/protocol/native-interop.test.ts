@@ -23,7 +23,10 @@ const pending: Array<{
 }> = [];
 beforeAll(() => {
   directory = mkdtempSync(join(tmpdir(), "croc-oracle-"));
-  const binary = join(directory, "oracle");
+  const binary = join(
+    directory,
+    globalThis.process.platform === "win32" ? "oracle.exe" : "oracle",
+  );
   execFileSync("go", ["build", "-o", binary, "./testdata/oracle"], {
     cwd: import.meta.dirname + "/../..",
   });
@@ -38,9 +41,29 @@ beforeAll(() => {
     for (const p of pending.splice(0)) p.reject(new Error("Oracle exited"));
   });
 }, 30000);
-afterAll(() => {
-  process?.kill();
-  if (directory) rmSync(directory, { recursive: true, force: true });
+afterAll(async () => {
+  if (process && process.exitCode === null && process.signalCode === null) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        process.off("exit", done);
+        resolve();
+      }, 5000);
+      function done(): void {
+        clearTimeout(timer);
+        resolve();
+      }
+      process.once("exit", done);
+      process.kill();
+    });
+  }
+  if (directory) {
+    rmSync(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  }
 });
 function oracle<T>(
   Method: string,
