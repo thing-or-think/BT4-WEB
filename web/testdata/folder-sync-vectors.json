@@ -1,0 +1,3099 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "identical",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "d/b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "d/b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a",
+            "d",
+            "d/b"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "new file and directory",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "d/b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [
+            "a",
+            "d",
+            "d/b"
+          ],
+          "update": [],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "size differs",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 4,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [
+            "a"
+          ],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "same size and mtime, different content: undetected without checksum",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "ERITFBUWFxg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "same size and mtime, different content: detected with checksum",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "ERITFBUWFxg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": true,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [
+            "a"
+          ],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "checksum with equal hashes",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": true,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "checksum requests missing hashes",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 2,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          },
+          {
+            "path": "b",
+            "size": 5,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": true,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "need_hash": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "same size, mtime differs: needs hash",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "need_hash": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "same size, mtime differs, same content: touch",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [
+            "a"
+          ],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "same size, mtime differs, different content: update",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "ERITFBUWFxg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [
+            "a"
+          ],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "mode differs only",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 448,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [
+            "a",
+            "d"
+          ],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "directory mtime is ignored",
+      "src": {
+        "entries": [
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T13:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "d"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "file becomes directory",
+      "src": {
+        "entries": [
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "x/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [
+            "x/a"
+          ],
+          "update": [
+            "x"
+          ],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "empty directory becomes file",
+      "src": {
+        "entries": [
+          {
+            "path": "x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [
+            "x"
+          ],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "non-empty directory becomes file without delete: conflict",
+      "src": {
+        "entries": [
+          {
+            "path": "x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "x/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [
+            "x"
+          ],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "non-empty directory becomes file with delete",
+      "src": {
+        "entries": [
+          {
+            "path": "keep",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "keep",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "x/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [
+            "x"
+          ],
+          "touch": [],
+          "skip": [
+            "keep",
+            "keep2"
+          ],
+          "delete": [
+            "x/a"
+          ],
+          "conflicts": [],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "case-only rename is not add+delete",
+      "src": {
+        "entries": [
+          {
+            "path": "Docs",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "Docs/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "Readme.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "README.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "docs",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "docs/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [
+            "Docs",
+            "Docs/a",
+            "Readme.md"
+          ],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {
+            "Docs": "docs",
+            "Docs/a": "docs/a",
+            "Readme.md": "README.md"
+          },
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "case-sensitive destination keeps exact match",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "A",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a",
+            "b"
+          ],
+          "delete": [
+            "A"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "extra destination files kept without delete",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "extra",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "extra destination tree deleted with delete",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "old",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "old/f",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a",
+            "b",
+            "c"
+          ],
+          "delete": [
+            "old/f",
+            "old"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "rename with mtime diff, type change, and mode diff",
+      "src": {
+        "entries": [
+          {
+            "path": "Readme.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          },
+          {
+            "path": "m",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 384,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "x/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "README.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          },
+          {
+            "path": "m",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "size": 9,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [
+            "x/a"
+          ],
+          "update": [
+            "x"
+          ],
+          "touch": [
+            "Readme.md",
+            "m"
+          ],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {
+            "Readme.md": "README.md"
+          },
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete protection for filtered, symlink, special, and invalid-name",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "skipped": [
+          {
+            "path": "build",
+            "reason": "filtered"
+          },
+          {
+            "path": "logs/app.log",
+            "reason": "filtered"
+          },
+          {
+            "path": "link",
+            "reason": "symlink"
+          },
+          {
+            "path": "unreadable",
+            "reason": "special"
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "build",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "build/out",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "build/out/x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "gone",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "gone/h",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "link",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "logs",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "logs/app.log",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "logs/old.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "unreadable",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "withdevice",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "withdevice/g",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "withlink",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "withlink/f",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "skipped": [
+          {
+            "path": "withlink/sym",
+            "reason": "symlink"
+          },
+          {
+            "disk_path": "withdevice/CON",
+            "reason": "invalid_name"
+          },
+          {
+            "disk_path": "AUX",
+            "reason": "invalid_name"
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "delete": [
+            "gone/h",
+            "logs/old.txt",
+            "withdevice/g",
+            "withlink/f",
+            "gone"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete protection case-insensitive and NFC/NFD",
+      "src": {
+        "entries": [
+          {
+            "path": "keep1",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep3",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "skipped": [
+          {
+            "path": "Data",
+            "reason": "symlink"
+          },
+          {
+            "path": "Café",
+            "reason": "filtered"
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "café",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "café/menu.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "data",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "data/important.db",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "extra.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep1",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep3",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "keep1",
+            "keep2",
+            "keep3"
+          ],
+          "delete": [
+            "extra.txt"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "type change conflict with direct invalid-name child",
+      "src": {
+        "entries": [
+          {
+            "path": "keep1",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "keep1",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "skipped": [
+          {
+            "disk_path": "x/CON",
+            "reason": "invalid_name"
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "keep1",
+            "keep2"
+          ],
+          "delete": [],
+          "conflicts": [
+            "x"
+          ],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "type change conflict with nested invalid-name child",
+      "src": {
+        "entries": [
+          {
+            "path": "keep1",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "keep1",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "keep2",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "skipped": [
+          {
+            "disk_path": "x/sub/CON",
+            "reason": "invalid_name"
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "keep1",
+            "keep2"
+          ],
+          "delete": [],
+          "conflicts": [
+            "x"
+          ],
+          "type_changed": [
+            "x"
+          ],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete blocked by incomplete source",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "skipped": [
+          {
+            "path": "unreadable",
+            "reason": "read_error"
+          }
+        ],
+        "complete": false
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": true,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete blocked by empty source without allow",
+      "src": {
+        "entries": [],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": true,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete allowed by empty source with allow requires confirm",
+      "src": {
+        "entries": [],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": true,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [],
+          "delete": [
+            "a",
+            "b"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": true
+        }
+      }
+    },
+    {
+      "name": "empty source without delete is not blocked",
+      "src": {
+        "entries": [],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete 50 percent (1 of 2 files) does not require confirm",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [
+            "b"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete over 50 percent (2 of 3 files) requires confirm",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [
+            "b",
+            "c"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": true
+        }
+      }
+    },
+    {
+      "name": "delete directories only does not require confirm",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d1",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "d2",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "d3",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [
+            "d1",
+            "d2",
+            "d3"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "delete nested tree over 50 percent requires confirm",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "x/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "x/b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [
+            "x/a",
+            "x/b",
+            "x"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": true
+        }
+      }
+    },
+    {
+      "name": "delete deep tree ordering deepest first",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "b",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "c",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "old",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "old/deep",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "old/deep/x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "z",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "delete": [
+            "old/deep/x",
+            "old/deep",
+            "old",
+            "z"
+          ],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "invalid source: traversal path",
+      "src": {
+        "entries": [
+          {
+            "path": "../x",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": true
+      }
+    },
+    {
+      "name": "invalid source: non-canonical path",
+      "src": {
+        "entries": [
+          {
+            "path": "./a.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": true
+      }
+    },
+    {
+      "name": "invalid source: non-canonical NFD path",
+      "src": {
+        "entries": [
+          {
+            "path": "café.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": true
+      }
+    },
+    {
+      "name": "invalid source: case collision",
+      "src": {
+        "entries": [
+          {
+            "path": "Docs",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "Docs/ReadMe.md",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "Docs/readme.md",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": true
+      }
+    },
+    {
+      "name": "invalid source: missing parent directory",
+      "src": {
+        "entries": [
+          {
+            "path": "sub/a.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": true
+      }
+    },
+    {
+      "name": "invalid source: staging path",
+      "src": {
+        "entries": [
+          {
+            "path": ".croc-sync-tmp-1",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": ".croc-sync-tmp-1/a.txt",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": true
+      }
+    },
+    {
+      "name": "need hash with case-only rename",
+      "src": {
+        "entries": [
+          {
+            "path": "Readme.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "new",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "README.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "need_hash": [
+          "Readme.md",
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "nanosecond mtime difference needs hash",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00.000000001Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "need_hash": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "nanosecond mtime difference with equal hash touches",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00.000000001Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": false
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [
+            "a"
+          ],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "ignore_metadata: mtime differs with equal hash skips",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": true
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "ignore_metadata: mode differs only skips file and directory",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 448,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "d",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": true
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [],
+          "skip": [
+            "a",
+            "d"
+          ],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "ignore_metadata: mtime differs with different hash still updates",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "ERITFBUWFxg="
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": true
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [
+            "a"
+          ],
+          "touch": [],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {},
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    },
+    {
+      "name": "ignore_metadata: mtime differs with missing hash still needs hash",
+      "src": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "a",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": false,
+        "allow_empty_source": false,
+        "ignore_metadata": true
+      },
+      "want": {
+        "error": false,
+        "need_hash": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "ignore_metadata: case-only rename still touches",
+      "src": {
+        "entries": [
+          {
+            "path": "Docs",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 448,
+            "kind": 1
+          },
+          {
+            "path": "Docs/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          },
+          {
+            "path": "Readme.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:05Z",
+            "mode": 493,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          }
+        ],
+        "complete": true
+      },
+      "dst": {
+        "entries": [
+          {
+            "path": "README.md",
+            "size": 3,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0,
+            "hash": "AQIDBAUGBwg="
+          },
+          {
+            "path": "docs",
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 493,
+            "kind": 1
+          },
+          {
+            "path": "docs/a",
+            "size": 1,
+            "mod_time": "2026-11-01T12:00:00Z",
+            "mode": 420,
+            "kind": 0
+          }
+        ],
+        "complete": true
+      },
+      "opts": {
+        "checksum": false,
+        "delete": true,
+        "allow_empty_source": false,
+        "ignore_metadata": true
+      },
+      "want": {
+        "error": false,
+        "plan": {
+          "add": [],
+          "update": [],
+          "touch": [
+            "Docs",
+            "Docs/a",
+            "Readme.md"
+          ],
+          "skip": [],
+          "delete": [],
+          "conflicts": [],
+          "type_changed": [],
+          "renames": {
+            "Docs": "docs",
+            "Docs/a": "docs/a",
+            "Readme.md": "README.md"
+          },
+          "delete_blocked": false,
+          "require_delete_confirm": false
+        }
+      }
+    }
+  ]
+}

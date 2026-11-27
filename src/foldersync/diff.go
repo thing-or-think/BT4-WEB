@@ -22,6 +22,11 @@ type DiffOptions struct {
 
 	// AllowEmptySource (--allow-empty-source) cho phép xóa khi nguồn rỗng.
 	AllowEmptySource bool
+
+	// IgnoreMetadata bỏ qua khác biệt ModTime và Mode khi đích không thể đặt lại
+	// thời gian sửa hoặc quyền tệp (ví dụ trình duyệt web). Đổi tên chỉ khác
+	// hoa/thường vẫn tạo Touch vì đổi tên không phải metadata.
+	IgnoreMetadata bool
 }
 
 // pair là một mục nguồn và mục đích tương ứng (nil nếu đích chưa có).
@@ -120,7 +125,7 @@ func Compare(src, dst *Manifest, o DiffOptions) (*Plan, []string, error) {
 		}
 		c := Change{Path: s.Path, Src: s, Dst: d}
 		renamed := d.Path != s.Path
-		modeDiffers := s.Mode != d.Mode
+		modeDiffers := !o.IgnoreMetadata && s.Mode != d.Mode
 
 		switch {
 		case s.Kind != d.Kind:
@@ -159,7 +164,7 @@ func Compare(src, dst *Manifest, o DiffOptions) (*Plan, []string, error) {
 			p.Update = append(p.Update, c)
 
 		default:
-			mtimeDiffers := !s.ModTime.Equal(d.ModTime)
+			mtimeDiffers := !o.IgnoreMetadata && !s.ModTime.Equal(d.ModTime)
 			if renamed || modeDiffers || mtimeDiffers {
 				c.Reason = touchReason(renamed, modeDiffers, mtimeDiffers)
 				p.Touch = append(p.Touch, c)
