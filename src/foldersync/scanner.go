@@ -191,9 +191,12 @@ func (s *scanner) walkDir(ctx context.Context, diskDir, wireDir string) error {
 		if scanTestHook != nil {
 			scanTestHook("stat", diskRel)
 		}
-		// Lstat lại thay vì d.Info(): trên Windows DirEntry.Info trả metadata đã lưu từ
-		// lúc ReadDir, nên không phát hiện được tệp vừa biến mất hoặc đổi loại.
-		info, err := os.Lstat(filepath.Join(s.root, diskRel))
+		// Trên Unix d.Info() gọi lstat, nên phát hiện được tệp vừa biến mất hoặc đổi loại.
+		// Trên Windows nó trả metadata đã có từ lúc ReadDir (nhanh hơn ~19 lần so với
+		// Lstat lại, cần cho mục tiêu 100.000 tệp), tức một ảnh chụp nhất quán tại lúc đọc
+		// thư mục. Thay đổi sau đó được HashEntries và bước commit kiểm lại; một tệp nguồn
+		// đã biến mất chỉ làm tải lỗi, không bao giờ khiến đích xóa nhầm.
+		info, err := d.Info()
 		if err == nil && info.Mode().Type() != typ {
 			err = fmt.Errorf("%w: type changed from %v to %v", ErrFileChanged, typ, info.Mode().Type())
 		}

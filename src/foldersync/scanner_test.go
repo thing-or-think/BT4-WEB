@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -249,6 +250,13 @@ func TestScanDirFileVanishesDuringScan(t *testing.T) {
 		}
 	})
 	m := mustScan(t, root, ScanOptions{})
+	if runtime.GOOS == "windows" {
+		// Metadata lấy từ ảnh chụp ReadDir: tệp vẫn được liệt kê, lỗi để HashEntries/commit bắt.
+		if !m.Complete || !slices.Equal(entryPaths(m), []string{"a.txt", "gone.txt"}) {
+			t.Fatalf("Complete=%v entries=%q", m.Complete, entryPaths(m))
+		}
+		return
+	}
 	if m.Complete {
 		t.Fatal("vanished file must make the scan incomplete")
 	}
@@ -271,6 +279,13 @@ func TestScanDirTypeChangesDuringScan(t *testing.T) {
 		}
 	})
 	m := mustScan(t, root, ScanOptions{})
+	if runtime.GOOS == "windows" {
+		// Ảnh chụp ReadDir vẫn là tệp; scanner không đi vào thư mục mới.
+		if len(m.Entries) != 1 || !m.Entries[0].IsFile() {
+			t.Fatalf("entries = %+v", m.Entries)
+		}
+		return
+	}
 	errs := findSkipped(m, SkipReadError)
 	if m.Complete || len(errs) != 1 || !strings.Contains(errs[0].Detail, "type changed") {
 		t.Fatalf("Complete=%v errors=%v", m.Complete, errs)
