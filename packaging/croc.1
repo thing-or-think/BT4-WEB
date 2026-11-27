@@ -14,13 +14,18 @@ croc \- transfer files, directories, and text using a short code
 .B croc ssh
 .RI [ options ]
 .br
+.B croc sync
+.RI [ options ] " folder"
+.br
 .B croc relay
 .RI [ options ]
 .SH DESCRIPTION
 Croc transfers data between computers using a shared code. Connections are
 encrypted end to end, with direct connections when available and relay fallback.
 Both participants must be available for a normal transfer. The store command
-uploads encrypted regular files for later retrieval.
+uploads encrypted regular files for later retrieval. The sync command keeps a
+folder synchronized one-way from a source computer to a destination computer,
+transferring only new or changed files.
 .SH EXAMPLES
 Send a file:
 .PP
@@ -32,6 +37,24 @@ Receive a file by running croc and entering the code at its prompt:
 .PP
 .RS
 .B croc
+.RE
+.PP
+Sync a folder one-way from the source computer:
+.PP
+.RS
+.B croc sync ./project
+.RE
+.PP
+Receive synced changes on the destination computer (previewing deletions first):
+.PP
+.RS
+.B CROC_SECRET='code-phrase' croc sync --dry-run --delete ./project
+.RE
+.PP
+Watch the source folder and sync edits continuously:
+.PP
+.RS
+.B croc sync --watch ./project
 .RE
 .PP
 On Unix, a code may also be passed using the CROC_SECRET environment variable.
@@ -56,6 +79,67 @@ expiration, download-limit, and storage service options.
 Share an interactive terminal using separate read/write and read-only invitations.
 An invitation grants the access described by the host until the session ends.
 .TP
+.B sync
+Keep a folder synchronized one-way from a source computer to a destination
+computer. Both sides require
+.I folder
+to already exist as a directory.
+The role is determined by the
+.B CROC_SECRET
+environment variable: run without
+.B CROC_SECRET
+on the source computer, and set
+.B CROC_SECRET
+on the destination computer. Passing flags belonging to the opposite role exits
+with status 1.
+.RS
+.PP
+Source flags (without CROC_SECRET):
+.TP
+.B --code, -c CODE
+Use a custom code phrase (at least 6 characters). On Unix, requires classic mode
+(\fBcroc --classic\fR) to avoid exposing secrets in the process list.
+.TP
+.B --transport MODE
+Select the file data transport: \fBauto\fR (default), \fBderp\fR, or \fBrelay\fR.
+.TP
+.B --exclude STRINGS
+Exclude paths containing any of the comma-separated substrings (case-insensitive).
+.TP
+.B --exclude-file PATHS
+Exclude exact comma-separated relative paths.
+.TP
+.B --git
+Respect \fB.gitignore\fR rules and skip Git-ignored entries.
+.TP
+.B --qrcode, --qr
+Display a QR code for the Web Sync URL (\fB<web-url>/?sync=<code>#sync\fR).
+Cannot be combined with \fB--transport derp\fR.
+.TP
+.B --watch
+Watch the source folder and continuously sync changes over a single session
+until interrupted with Ctrl-C. The destination follows watch mode automatically.
+.TP
+.B --no-local
+Disable local relay and LAN discovery.
+.PP
+Destination flags (with CROC_SECRET set):
+.TP
+.B --delete
+Delete destination files and directories absent from the source, subject to
+safety checks (incomplete source scans, filtered/skipped entries, empty source,
+and >50% file-deletion confirmation).
+.TP
+.B --dry-run
+Print the planned changes without downloading files or modifying the destination.
+.TP
+.B --checksum
+Compare file contents with xxhash64 even when size and modification time match.
+.TP
+.B --allow-empty-source
+Allow \fB--delete\fR to delete destination entries when the source folder is empty.
+.RE
+.TP
 .B relay
 Run a relay explicitly. Installing this package does not start a relay service.
 .TP
@@ -78,6 +162,8 @@ Print the installed release version.
 .TP
 .B --yes
 Automatically accept prompts. Use only when the sender and transfer are trusted.
+In \fBcroc sync\fR, does not bypass the typed \fByes\fR confirmation required
+when deleting more than half of the destination files.
 .TP
 .B --out DIRECTORY
 Receive files in DIRECTORY.
@@ -85,12 +171,37 @@ Receive files in DIRECTORY.
 .B --relay ADDRESS
 Use the specified relay.
 .TP
+.B --pass PASSWORD
+Password for the relay (or path to a file containing the password).
+.TP
+.B --web-url URL
+Web client origin for receive and Web Sync links and QR codes.
+.TP
 .B --quiet
-Disable output.
+Disable output (in \fBcroc sync --dry-run\fR, the plan is still printed).
+.SH EXIT STATUS
+.TP
+.B 0
+Command completed successfully (including \fBcroc sync\fR when already in sync,
+\fB--dry-run\fR completion, or stopping \fBcroc sync --watch\fR with Ctrl-C).
+.TP
+.B 1
+Fatal error (invalid flags or role mismatch, missing folder, network/PAKE/protocol
+error, peer lacking \fBfolder-sync-v1\fR, non-interactive \fB--delete\fR without
+\fB--yes\fR in one-shot sync, or Ctrl-C interruption in one-shot sync).
+.TP
+.B 2
+Partial completion in one-shot \fBcroc sync\fR: one or more items failed to
+commit or delete, conflicts occurred, or deletions were held (for example,
+unconfirmed >50% deletions or commit failures).
 .SH ENVIRONMENT
 .TP
 .B CROC_SECRET
-The code or invitation used for a transfer or shared terminal.
+The code or invitation used for a transfer or shared terminal. For
+.BR "croc sync" ,
+setting
+.B CROC_SECRET
+selects the destination role; leaving it unset selects the source role.
 .TP
 .B CROC_CONFIG_DIR
 Override the per-user configuration directory.

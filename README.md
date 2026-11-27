@@ -260,6 +260,35 @@ See the
 [SSH sharing design and security guide](src/docs/SSH_SHARING.md) for protocol,
 reconnection, platform, relay, and threat-model details.
 
+### Sync a folder
+
+To keep a folder in sync one-way from a source computer to a destination
+computer, run `croc sync` without `CROC_SECRET` on the source:
+
+```bash
+croc sync ./project
+```
+
+On the destination computer, set `CROC_SECRET` to the printed code phrase and
+point `croc sync` at the existing target folder:
+
+```bash
+CROC_SECRET='code-phrase' croc sync ./project
+```
+
+Only new or changed files are transferred. Add `--watch` on the source to
+continuously sync edits over a single encrypted session (the destination
+follows automatically), and pass `--delete` (or `--dry-run --delete` to preview
+first) on the destination to remove files that no longer exist on the source.
+
+When using `--transport auto` or `relay`, the source also prints a web link
+(`<web-url>/?sync=<code>#sync`; pass `--qr` to display a QR code) so you can
+sync directly into a local folder in desktop Chrome or Edge.
+
+See the [folder sync guide](src/docs/FOLDER_SYNC.md) for full flag reference,
+change detection, deletion safeguards, watch mode, Web Sync, and security
+details.
+
 ### Customizations & Options
 
 #### Encrypted temporary storage
