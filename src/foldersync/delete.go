@@ -132,6 +132,7 @@ func deleteOne(root *receivefs.Root, c Change) error {
 	if err := unchangedSince(c.Dst, info); err != nil {
 		return err
 	}
+	makeWritable(root, c.Path)
 	return root.Remove(c.Path)
 }
 
