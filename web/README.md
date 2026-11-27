@@ -59,6 +59,18 @@ analytics.
 Active sends and receives show total and per-file progress, measured bytes per
 second, and an ETA calculated with `arrival-time`.
 
+Web Sync (`#sync`, or `/?sync=<code>#sync` links and QR codes printed by
+`croc sync`) syncs a folder one-way from a CLI `croc sync` source directly into
+a local directory in desktop Chrome or Edge using the File System Access API in
+a secure context. Users pick a destination folder before connecting, can preview
+plans (dry run), force content comparison, or enable deletions with confirmation
+guards (requiring typing `yes` when deleting more than half of the destination
+files). Files are written through `createWritable()` and committed only after
+matching the source XXH64 hash, and a local IndexedDB hash cache keeps repeat
+syncs fast even though browsers cannot preserve file modification times or
+permissions. Web Sync does not support `--watch` or `--transport derp` yet, and
+automatically disables deletions when the source uses `--git` filtering.
+
 ## Local development
 
 From this directory:

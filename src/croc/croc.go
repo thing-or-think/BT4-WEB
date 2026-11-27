@@ -141,7 +141,7 @@ type Options struct {
 	// PAKE and file metadata. Nil keeps ordinary send/receive unchanged.
 	SyncHook SyncHook `json:"-"`
 	// SendInstructions, when set, replaces the default receive instructions
-	// printed by Send and skips the web receive URL and QR code.
+	// printed by Send.
 	SendInstructions func(secret, relayFlags string) string `json:"-"`
 }
 
@@ -1874,6 +1874,13 @@ func (c *Client) Send(filesInfo []FileInfo, emptyFoldersToTransfer []FileInfo, t
 	output, colorEnabled := termui.Output(os.Stderr)
 	if c.Options.SendInstructions != nil {
 		fmt.Fprint(output, c.Options.SendInstructions(c.Options.SharedSecret, flags.String()))
+		if c.Options.ShowQrCode && c.Options.Transport != TransportDERP {
+			qrURL := webReceiveURL(c.Options.WebOrigin, c.Options.SharedSecret)
+			if c.Options.SyncHook != nil {
+				qrURL = WebSyncURL(c.Options.WebOrigin, c.Options.SharedSecret)
+			}
+			showReceiveCommandQrCode(qrURL)
+		}
 	} else {
 		webURL := ""
 		if c.Options.Transport != TransportDERP {
@@ -1996,6 +2003,16 @@ func webReceiveURL(origin, code string) string {
 	}
 	origin = strings.TrimSuffix(origin, "/")
 	return origin + "/?code=" + url.QueryEscape(code)
+}
+
+// WebSyncURL builds the browser Web Sync URL for a sync code phrase.
+func WebSyncURL(origin, code string) string {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		origin = "https://getcroc.com"
+	}
+	origin = strings.TrimSuffix(origin, "/")
+	return origin + "/?sync=" + url.QueryEscape(code) + "#sync"
 }
 
 type peerDiscoveryResult struct {

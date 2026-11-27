@@ -56,6 +56,7 @@ CROC_SECRET='ma-phien-o-day' croc sync --dry-run --delete ./du-an
 | `--exclude <chuỗi,...>` | Loại bỏ đường dẫn chứa bất kỳ chuỗi con nào (phân tách bằng dấu phẩy, không phân biệt hoa/thường). |
 | `--exclude-file <đường-dẫn,...>` | Loại bỏ chính xác các đường dẫn tương đối đã liệt kê (phân tách bằng dấu phẩy). |
 | `--git` | Tôn trọng `.gitignore`, không đồng bộ các mục bị Git bỏ qua. |
+| `--qrcode`, `--qr` | Hiển thị mã QR cho đường dẫn Web Sync (`<web-url>/?sync=<mã>#sync`). Không dùng được với `--transport derp`. |
 | `--watch` | Theo dõi liên tục thư mục nguồn và tự động đồng bộ các thay đổi sang máy đích trong cùng một phiên cho tới khi bấm `Ctrl-C`. |
 | `--no-local` | Tắt relay cục bộ và khám phá mạng LAN. |
 
@@ -76,12 +77,30 @@ CROC_SECRET='ma-phien-o-day' croc sync --dry-run --delete ./du-an
 | `--quiet` | Ẩn thông báo tiến trình, bảng kế hoạch và dòng tổng kết (trừ `--dry-run` vẫn in bảng kế hoạch). |
 | `--relay <địa-chỉ>` | Chỉ định máy chủ relay tự vận hành (ví dụ `127.0.0.1:9009`). |
 | `--pass <mật-khẩu>` | Mật khẩu kết nối tới relay (hoặc đường dẫn tệp chứa mật khẩu). |
+| `--web-url <url>` | Origin của giao diện web cho đường dẫn và mã QR Web Sync (mặc định `https://getcroc.com`). |
 
-### Các cờ chưa hỗ trợ
+---
 
-| Cờ | Trạng thái |
-| --- | --- |
-| `--qrcode`, `--qr` | Chưa khả dụng vì đồng bộ qua web chưa được hỗ trợ (`--qrcode needs web sync, which is not available yet`). |
+## Đồng bộ vào trình duyệt (Web Sync)
+
+Ngoài máy đích CLI, bạn có thể đồng bộ một chiều từ máy nguồn `croc sync` trực tiếp vào một thư mục trên máy tính thông qua giao diện web (**Sync folder** / `#sync`):
+
+1. **Trình duyệt hỗ trợ**: yêu cầu **Chrome hoặc Edge trên máy tính** chạy trong ngữ cảnh bảo mật (HTTPS hoặc `localhost`), vì Web Sync dùng File System Access API (`showDirectoryPicker`) để đọc/ghi trực tiếp vào thư mục cục bộ. Trên các trình duyệt không hỗ trợ, giao diện sẽ hiển thị lệnh CLI `CROC_SECRET='...' croc sync <folder>` thay thế.
+2. **Mở phiên Web Sync**:
+   - Máy nguồn (khi không dùng `--transport derp`) luôn in thêm dòng `Or open in Chrome/Edge: <web-url>/?sync=<mã>#sync`, và có thể kèm `--qrcode` để hiện mã QR.
+   - Mở trực tiếp đường dẫn đó (hoặc vào thẻ **Sync folder** / `#sync` và nhập mã phiên). Giao diện sẽ điền sẵn mã nhưng **không tự kết nối** — bạn cần chọn thư mục đích trước rồi bấm bắt đầu.
+3. **Chọn thư mục & tùy chọn**:
+   - Bấm **Choose folder** để cấp quyền đọc/ghi cho thư mục đích.
+   - Các tùy chọn tương ứng phía đích: xóa tệp không có ở nguồn (`--delete`), cho phép nguồn rỗng xóa toàn bộ (chỉ hiện khi bật xóa), so sánh nội dung (`--checksum`), và chỉ xem trước không ghi (`--dry-run`).
+   - Sau khi nhận kế hoạch thay đổi, trình duyệt hiển thị bảng thay đổi (`+`, `~`, `-`, `!`) và yêu cầu xác nhận trước khi xóa (nếu xóa quá 50% số tệp đích, phải gõ `yes` hoặc chọn áp dụng không xóa).
+4. **Cơ chế ghi an toàn và bộ nhớ đệm hash cục bộ**:
+   - Mọi tệp nhận về được ghi thông qua `createWritable()` và chỉ được commit (`close()`) sau khi xác minh khớp `xxhash64` với manifest của máy nguồn; nếu lệch hash hoặc tệp đích thay đổi giữa chừng, luồng ghi bị hủy (`abort()`).
+   - Vì trình duyệt không thể giữ nguyên thời gian sửa đổi (`mtime`), Web Sync lưu **bộ nhớ đệm hash cục bộ trên IndexedDB** gắn với thư mục đã chọn để các lần đồng bộ tiếp theo so sánh nội dung nhanh mà không phải băm lại toàn bộ các tệp chưa đổi.
+5. **Giới hạn của Web Sync**:
+   - **Chưa hỗ trợ `--watch`**: nếu máy nguồn bật `--watch`, trình duyệt sẽ từ chối và hiển thị lệnh CLI thay thế.
+   - **Không hỗ trợ `--transport derp`**: trình duyệt kết nối qua relay WebSocket, vì vậy hãy dùng `--transport auto` hoặc `relay`.
+   - **Không giữ được `mtime` và quyền tệp (`permissions`)**: File System Access API không cho phép đặt `mtime` hay quyền Unix cho tệp.
+   - **Nguồn lọc bằng `--git` sẽ tắt thao tác xóa trên trình duyệt**: trình duyệt không thể đánh giá tệp `.gitignore`, nên mọi lệnh xóa sẽ tự động bị vô hiệu hóa khi máy nguồn dùng `--git`.
 
 ---
 
@@ -160,7 +179,6 @@ Máy đích so sánh manifest nguồn với cây thư mục đích theo cơ ch�
 
 ## Giới hạn hiện tại
 
-- **Chưa có giao diện web (`croc-web` / `--qrcode`)**: hiện chỉ hoạt động giữa hai máy dùng CLI.
 - **Bỏ qua symlink** (và các tệp đặc biệt như pipe, socket, thiết bị): symlink không được đồng bộ mà chỉ in cảnh báo; phía đích bảo vệ các đường dẫn liên quan khỏi `--delete`.
 - **Không resume giữa chừng một lượt bị ngắt**: nếu mất kết nối hoặc bấm `Ctrl-C` giữa lượt, các tệp chưa commit vẫn giữ nguyên trạng thái cũ trên đĩa đích. Chỉ cần chạy lại `croc sync` — những tệp đã commit sẽ được bỏ qua và hai thư mục sẽ hội tụ về trạng thái giống nhau.
 - **Relay có thể nhận biết phiên `croc sync`**: tên tính năng `folder-sync-v1` được gửi trong thông điệp PAKE trước khi kênh được mã hóa, vì vậy máy chủ relay có thể phân biệt phiên `croc sync` với phiên `croc send` thông thường. Relay **không** nhìn thấy tên tệp, cấu trúc thư mục, bộ lọc, hash hay nội dung dữ liệu vì toàn bộ thông điệp `sync-*` và dữ liệu tệp chỉ truyền sau khi kênh mã hóa đầu-cuối đã thiết lập.

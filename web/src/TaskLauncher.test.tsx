@@ -33,6 +33,7 @@ describe("task launcher", () => {
     ["Send live", "send", "#send-panel"],
     ["Store files", "store", "#store"],
     ["Receive files", "receive", "#receive"],
+    ["Sync folder", "sync", "#sync"],
     ["Join SSH", "ssh", "#ssh"],
   ])("opens %s directly and returns to all tasks", (label, task, hash) => {
     render(<Harness />);
@@ -51,6 +52,7 @@ describe("task launcher", () => {
     expect(screen.queryByRole("button", { name: "Store files" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send live" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Receive files" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sync folder" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Join SSH" })).toBeVisible();
   });
 
@@ -90,6 +92,7 @@ describe("task launcher", () => {
     expect(taskFromHash("#send-panel")).toBe("send");
     expect(taskFromHash("#send")).toBe("send");
     expect(taskFromHash("#receive")).toBe("receive");
+    expect(taskFromHash("#sync")).toBe("sync");
     expect(taskFromHash("#ssh?code=invitation")).toBe("ssh");
     expect(taskFromHash("#cli-download")).toBe("home");
   });

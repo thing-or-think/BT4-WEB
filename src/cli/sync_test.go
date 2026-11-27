@@ -247,36 +247,97 @@ func TestSyncWrongRoleFlags(t *testing.T) {
 	}
 }
 
-func TestSyncUnavailableFlagsOnSource(t *testing.T) {
+func TestSyncQRCodeAndWebURLOnSource(t *testing.T) {
 	dir := t.TempDir()
 	unsetEnv(t, "CROC_SECRET")
-	stubSyncRunners(t,
-		func(_ context.Context, _ foldersync.HostOptions) (*foldersync.Result, error) {
-			t.Fatal("host runner must not be called")
-			return nil, nil
-		},
-		func(_ context.Context, _ foldersync.JoinOptions) (*foldersync.Result, error) {
-			t.Fatal("join runner must not be called")
-			return nil, nil
-		},
-	)
 
-	tests := []struct {
-		name string
-		flag string
-		want string
-	}{
-		{name: "qrcode", flag: "--qrcode", want: "--qrcode needs web sync, which is not available yet"},
-		{name: "qr alias", flag: "--qr", want: "--qrcode needs web sync, which is not available yet"},
-	}
+	for _, flagName := range []string{"--qrcode", "--qr"} {
+		t.Run("source accepts "+flagName, func(t *testing.T) {
+			var gotHost foldersync.HostOptions
+			stubSyncRunners(t,
+				func(_ context.Context, o foldersync.HostOptions) (*foldersync.Result, error) {
+					gotHost = o
+					return &foldersync.Result{}, nil
+				},
+				func(_ context.Context, _ foldersync.JoinOptions) (*foldersync.Result, error) {
+					t.Fatal("join runner must not be called")
+					return nil, nil
+				},
+			)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := newApp().Run([]string{"croc", "sync", tt.flag, dir})
-			assertExitCode(t, err, 1)
-			require.EqualError(t, err, tt.want)
+			err := newApp().Run([]string{
+				"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+				"--web-url", "https://sync.example/",
+				"sync", flagName, dir,
+			})
+			require.NoError(t, err)
+			require.True(t, gotHost.Croc.ShowQrCode)
+			require.Equal(t, "https://sync.example/", gotHost.Croc.WebOrigin)
+			require.NotNil(t, gotHost.Croc.SendInstructions)
+			instructions := gotHost.Croc.SendInstructions("alpha-beta-gamma", "")
+			require.Contains(t, instructions, "Or open in Chrome/Edge: https://sync.example/?sync=alpha-beta-gamma#sync\n")
 		})
 	}
+
+	t.Run("source without --qrcode still prints ?sync= URL", func(t *testing.T) {
+		var gotHost foldersync.HostOptions
+		stubSyncRunners(t,
+			func(_ context.Context, o foldersync.HostOptions) (*foldersync.Result, error) {
+				gotHost = o
+				return &foldersync.Result{}, nil
+			},
+			nil,
+		)
+
+		err := newApp().Run([]string{
+			"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+			"sync", dir,
+		})
+		require.NoError(t, err)
+		require.False(t, gotHost.Croc.ShowQrCode)
+		instructions := gotHost.Croc.SendInstructions("alpha-beta-gamma", "")
+		require.Contains(t, instructions, "Or open in Chrome/Edge: https://getcroc.com/?sync=alpha-beta-gamma#sync\n")
+	})
+
+	for _, flagName := range []string{"--qrcode", "--qr"} {
+		t.Run("derp + "+flagName+" returns error", func(t *testing.T) {
+			stubSyncRunners(t,
+				func(_ context.Context, _ foldersync.HostOptions) (*foldersync.Result, error) {
+					t.Fatal("host runner must not be called")
+					return nil, nil
+				},
+				nil,
+			)
+
+			err := newApp().Run([]string{
+				"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+				"sync", "--transport", "derp", flagName, dir,
+			})
+			assertExitCode(t, err, 1)
+			require.EqualError(t, err, "web sync does not support --transport derp; use auto or relay")
+		})
+	}
+
+	t.Run("derp without --qrcode omits web URL line", func(t *testing.T) {
+		var gotHost foldersync.HostOptions
+		stubSyncRunners(t,
+			func(_ context.Context, o foldersync.HostOptions) (*foldersync.Result, error) {
+				gotHost = o
+				return &foldersync.Result{}, nil
+			},
+			nil,
+		)
+
+		err := newApp().Run([]string{
+			"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+			"sync", "--transport", "derp", dir,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, gotHost.Croc.SendInstructions)
+		instructions := gotHost.Croc.SendInstructions("alpha-beta-gamma", "")
+		require.NotContains(t, instructions, "Or open in Chrome/Edge:")
+		require.NotContains(t, instructions, "?sync=")
+	})
 }
 
 func TestSyncFolderArguments(t *testing.T) {
@@ -415,20 +476,25 @@ func TestSyncExitCodes(t *testing.T) {
 }
 
 func TestFormatSyncInstructions(t *testing.T) {
-	plain := formatSyncInstructions("alpha-beta-gamma", "", false)
+	webURL := "https://getcroc.com/?sync=alpha-beta-gamma#sync"
+	plain := formatSyncInstructions("alpha-beta-gamma", "", webURL, false)
 	require.Contains(t, plain, "On the other computer, run:")
 	require.Contains(t, plain, "CROC_SECRET='alpha-beta-gamma' croc sync <folder>")
 	require.Contains(t, plain, "$env:CROC_SECRET='alpha-beta-gamma'; croc sync <folder>")
+	require.Contains(t, plain, "Or open in Chrome/Edge: "+webURL+"\n")
 	require.False(t, strings.Contains(plain, "\x1b"))
 
-	colored := formatSyncInstructions("alpha-beta-gamma", "", true)
+	colored := formatSyncInstructions("alpha-beta-gamma", "", webURL, true)
 	require.Equal(t, plain, termui.Plain(colored))
 
-	withRelay := formatSyncInstructions("alpha-beta-gamma", "--relay '127.0.0.1:9009' --pass 'pw' ", false)
+	noWeb := formatSyncInstructions("alpha-beta-gamma", "", "", false)
+	require.NotContains(t, noWeb, "Or open in Chrome/Edge:")
+
+	withRelay := formatSyncInstructions("alpha-beta-gamma", "--relay '127.0.0.1:9009' --pass 'pw' ", "", false)
 	require.Contains(t, withRelay, "CROC_SECRET='alpha-beta-gamma' croc --relay '127.0.0.1:9009' --pass 'pw' sync <folder>")
 	require.Contains(t, withRelay, "$env:CROC_SECRET='alpha-beta-gamma'; croc --relay '127.0.0.1:9009' --pass 'pw' sync <folder>")
 
-	escaped := formatSyncInstructions("don't-panic", "", false)
+	escaped := formatSyncInstructions("don't-panic", "", "", false)
 	require.Contains(t, escaped, `CROC_SECRET='don'\''t-panic'`)
 	require.Contains(t, escaped, `$env:CROC_SECRET='don''t-panic'`)
 }

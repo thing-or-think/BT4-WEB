@@ -123,9 +123,6 @@ func validateSyncFlags(c *cli.Context, isDestination bool) error {
 			return fmt.Errorf("--%s only applies on the destination (the computer that runs croc sync with CROC_SECRET set)", name)
 		}
 	}
-	if c.Bool("qrcode") {
-		return errors.New("--qrcode needs web sync, which is not available yet")
-	}
 	return nil
 }
 
@@ -156,6 +153,10 @@ func syncHost(c *cli.Context, dir string, reporter *syncReporter, out io.Writer,
 	transport, err := croc.ParseTransportMode(c.String("transport"))
 	if err != nil {
 		return err
+	}
+	showQrCode := c.Bool("qrcode")
+	if showQrCode && transport == croc.TransportDERP {
+		return errors.New("web sync does not support --transport derp; use auto or relay")
 	}
 
 	classicInsecureMode := utils.Exists(getClassicConfigFile(true))
@@ -201,6 +202,7 @@ Or enable classic mode if you accept that risk:
 
 	watch := c.Bool("watch")
 	quiet := c.Bool("quiet")
+	webOrigin := c.String("web-url")
 
 	crocOptions := croc.Options{
 		SharedSecret:      c.String("code"),
@@ -213,10 +215,12 @@ Or enable classic mode if you accept that risk:
 		OnlyLocal:         c.Bool("local"),
 		RelayPorts:        ports,
 		RelayPassword:     determinePass(c),
+		WebOrigin:         webOrigin,
 		NoCompress:        c.Bool("no-compress"),
 		Curve:             c.String("curve"),
 		ThrottleUpload:    c.String("throttleUpload"),
 		MulticastAddress:  c.String("multicast"),
+		ShowQrCode:        showQrCode,
 		Quiet:             quiet,
 		DisableClipboard:  c.Bool("disable-clipboard"),
 		ExtendedClipboard: c.Bool("extended-clipboard"),
@@ -224,7 +228,11 @@ Or enable classic mode if you accept that risk:
 		Transport:         transport,
 		SendInstructions: func(secret, relayFlags string) string {
 			_, colorEnabled := termui.Output(os.Stderr)
-			text := formatSyncInstructions(secret, relayFlags, colorEnabled)
+			webURL := ""
+			if transport != croc.TransportDERP {
+				webURL = croc.WebSyncURL(webOrigin, secret)
+			}
+			text := formatSyncInstructions(secret, relayFlags, webURL, colorEnabled)
 			if watch && !quiet {
 				text += fmt.Sprintf("Watching %s for changes (Ctrl+C to stop).\n", dir)
 			}
@@ -509,7 +517,7 @@ func formatPowerShellAssignment(name, value string, colorEnabled bool) string {
 		termui.Secret(psValue, colorEnabled) + termui.Color("'", termui.Cyan, colorEnabled)
 }
 
-func formatSyncInstructions(secret, relayFlags string, colorEnabled bool) string {
+func formatSyncInstructions(secret, relayFlags, webURL string, colorEnabled bool) string {
 	trimmedFlags := strings.TrimSpace(relayFlags)
 	cmd := "croc "
 	if trimmedFlags != "" {
@@ -520,9 +528,14 @@ func formatSyncInstructions(secret, relayFlags string, colorEnabled bool) string
 		termui.Color(" "+cmd, termui.Cyan, colorEnabled)
 	psCmd := formatPowerShellAssignment("CROC_SECRET", secret, colorEnabled) +
 		termui.Color("; "+cmd, termui.Cyan, colorEnabled)
-	return fmt.Sprintf("%s\n  %s      (Linux/macOS)\n  %s  (Windows PowerShell)\n",
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n  %s      (Linux/macOS)\n  %s  (Windows PowerShell)\n",
 		termui.Emphasis("On the other computer, run:", colorEnabled),
 		unixCmd,
 		psCmd,
 	)
+	if webURL != "" {
+		fmt.Fprintf(&b, "Or open in Chrome/Edge: %s\n", termui.Color(webURL, termui.Cyan, colorEnabled))
+	}
+	return b.String()
 }

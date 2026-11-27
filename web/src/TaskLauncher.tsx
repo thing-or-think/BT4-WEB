@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Download, Link, SquareTerminal, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, Link, RefreshCw, SquareTerminal, Upload } from "lucide-react";
 
-export type Task = "home" | "send" | "store" | "receive" | "ssh";
+export type Task = "home" | "send" | "store" | "receive" | "sync" | "ssh";
 
 const taskLabels: Record<Exclude<Task, "home">, string> = {
   send: "Send files",
   store: "Store files",
   receive: "Receive files",
+  sync: "Sync folder",
   ssh: "Join SSH",
 };
 
@@ -19,6 +20,8 @@ export function taskFromHash(hash = window.location.hash): Task {
       return "store";
     case "#receive":
       return "receive";
+    case "#sync":
+      return "sync";
     case "#ssh":
       return "ssh";
     default:
@@ -109,6 +112,7 @@ export function TaskSwitcher({
     { task: "send", icon: Upload },
     ...(storeEnabled ? [{ task: "store" as const, icon: Link }] : []),
     { task: "receive", icon: Download },
+    { task: "sync", icon: RefreshCw },
     { task: "ssh", icon: SquareTerminal },
   ] as const;
 
@@ -141,6 +145,7 @@ export function TaskLauncher({
     { task: "send", icon: Upload, description: "Send to someone who is online now." },
     ...(storeEnabled ? [{ task: "store" as const, icon: Link, description: "Share an encrypted link. Download later." }] : []),
     { task: "receive", icon: Download, description: "Open a croc code or encrypted link." },
+    { task: "sync", icon: RefreshCw, description: "Sync a folder one-way from a croc CLI peer." },
     { task: "ssh", icon: SquareTerminal, description: "Join a shared terminal with an invitation." },
   ] as const;
   return (

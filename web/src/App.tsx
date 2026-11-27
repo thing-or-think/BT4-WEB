@@ -100,6 +100,7 @@ type Theme = "dark" | "light";
 type CopyState = "idle" | "copied" | "error";
 type SendContent = "files" | "text";
 const SSHPanel = lazy(() => import("./SSHPanel"));
+const SyncPanel = lazy(() => import("./SyncPanel"));
 
 function sendHashAlgorithm(mode: SendMode): FileHashAlgorithm {
   return mode === "stored" ? "sha256" : "xxhash";
@@ -108,6 +109,8 @@ function sendHashAlgorithm(mode: SendMode): FileHashAlgorithm {
 const runtimeSettings = window.__CROC_RUNTIME_CONFIG__ ?? {};
 const requestedReceiveCode =
   new URLSearchParams(window.location.search).get("code")?.trim() ?? "";
+const requestedSyncCode =
+  new URLSearchParams(window.location.search).get("sync")?.trim() ?? "";
 const requestedStoredURL = /^\/s\/[A-Za-z0-9_-]{22}$/.test(
   window.location.pathname,
 )
@@ -690,6 +693,7 @@ export function App() {
     restoredStoredUpload || taskFromHash() === "store" ? "stored" : "direct",
   );
   const [sshActive, setSSHActive] = useState(false);
+  const [syncActive, setSyncActive] = useState(false);
   const [sendCode, setSendCode] = useState("");
   const [sendDetailsVisible, setSendDetailsVisible] = useState(false);
   const [sendActivity, setSendActivity] = useState<Activity>(restoredStoredUpload ? "done" : "idle");
@@ -736,10 +740,20 @@ export function App() {
   const receivedTextCopyReset = useRef<number>(undefined);
   const receiveOfferKind = useRef<TransferOffer["kind"]>("files");
 
-  const navigationLocked = sendActivity === "working" || receiveActivity === "working" || sshActive;
+  const navigationLocked =
+    sendActivity === "working" ||
+    receiveActivity === "working" ||
+    sshActive ||
+    syncActive;
   const [task, navigateTask, sshInvitation] = useTaskNavigation({
     defaultTask: "send",
-    initialTask: receiveOnly ? "receive" : restoredStoredUpload ? "store" : "send",
+    initialTask: receiveOnly
+      ? "receive"
+      : requestedSyncCode
+        ? "sync"
+        : restoredStoredUpload
+          ? "store"
+          : "send",
     storeEnabled,
     locked: navigationLocked,
   });
@@ -849,7 +863,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (sendActivity !== "working" && receiveActivity !== "working") return;
+    if (sendActivity !== "working" && receiveActivity !== "working" && !syncActive) return;
     let sentinel: WakeLockSentinel | undefined;
     let cancelled = false;
 
@@ -875,7 +889,7 @@ export function App() {
       document.removeEventListener("visibilitychange", onVisibility);
       void sentinel?.release().catch(() => {});
     };
-  }, [sendActivity, receiveActivity]);
+  }, [sendActivity, receiveActivity, syncActive]);
 
   useLayoutEffect(() => {
     if (requestedReceiveCode) {
@@ -1296,9 +1310,11 @@ export function App() {
           <h1>
             {receiveTask
               ? "Receive files, secured end-to-end."
-              : task === "ssh"
-                ? "Join a terminal, secured end-to-end."
-                : "croc: end-to-end encrypted transfers."}
+              : task === "sync"
+                ? "Sync a folder, secured end-to-end."
+                : task === "ssh"
+                  ? "Join a terminal, secured end-to-end."
+                  : "croc: end-to-end encrypted transfers."}
           </h1>
         </div>
       </header>
@@ -1861,6 +1877,24 @@ export function App() {
         </section>
       )}
 
+      {!receiveOnly && task === "sync" && (
+        <Suspense
+          fallback={
+            <section className="sync-workspace" aria-live="polite">
+              <article className="panel sync-loading">
+                Loading folder sync…
+              </article>
+            </section>
+          }
+        >
+          <SyncPanel
+            initialCode={requestedSyncCode || undefined}
+            settings={settings}
+            onActiveChange={setSyncActive}
+          />
+        </Suspense>
+      )}
+
       {!receiveOnly && task === "ssh" && (
         <Suspense
           fallback={
@@ -1911,7 +1945,7 @@ export function App() {
               <span>WebSocket gateway</span>
               <input
                 value={settings.gatewayURL}
-                disabled={sendBusy || receiveBusy || sshActive}
+                disabled={sendBusy || receiveBusy || sshActive || syncActive}
                 spellCheck={false}
                 onChange={(event) =>
                   setSettings((current) => ({
@@ -1936,7 +1970,7 @@ export function App() {
                 name="relay-password"
                 autoComplete="off"
                 value={settings.relayPassword}
-                disabled={sendBusy || receiveBusy || sshActive}
+                disabled={sendBusy || receiveBusy || sshActive || syncActive}
                 onChange={(event) =>
                   setSettings((current) => ({
                     ...current,
