@@ -394,6 +394,7 @@ func TestSyncExitCodes(t *testing.T) {
 		})
 		err := newApp().RunContext(ctx, []string{"croc", "--relay", "127.0.0.1:9009", "sync", dir})
 		assertExitCode(t, err, 1)
+		require.EqualError(t, err, "sync interrupted; files that were not committed are unchanged")
 		require.ErrorIs(t, err, context.Canceled)
 	})
 
@@ -409,6 +410,7 @@ func TestSyncExitCodes(t *testing.T) {
 
 		err := RunContext(ctx)
 		assertExitCode(t, err, 1)
+		require.EqualError(t, err, "sync interrupted; files that were not committed are unchanged")
 		require.ErrorIs(t, err, context.Canceled)
 	})
 }
@@ -434,13 +436,29 @@ func TestFormatSyncInstructions(t *testing.T) {
 
 func TestSyncReporterWarnings(t *testing.T) {
 	var buf bytes.Buffer
-	rep := newSyncReporter(&buf, false)
+	rep := newSyncReporter(&buf, "photos", false)
 	rep.Report(foldersync.Event{Kind: foldersync.EventWarning, Message: "skipped symlink foo"})
 	rep.Report(foldersync.Event{Kind: foldersync.EventScanned})
-	require.Equal(t, "warning: skipped symlink foo\n", buf.String())
+	rep.Report(foldersync.Event{
+		Kind: foldersync.EventScanned,
+		Manifest: &foldersync.Manifest{
+			Entries: []foldersync.Entry{
+				*fileEntry("a.txt", 1024),
+				*fileEntry("sub/b.txt", 512),
+				*dirEntry("sub"),
+			},
+		},
+	})
+	require.Equal(t, "warning: skipped symlink foo\nScanned photos: 2 files, 1 folders (1.5 kB)\n", buf.String())
 
 	buf.Reset()
-	quietRep := newSyncReporter(&buf, true)
+	quietRep := newSyncReporter(&buf, "photos", true)
 	quietRep.Report(foldersync.Event{Kind: foldersync.EventWarning, Message: "skipped symlink foo"})
+	quietRep.Report(foldersync.Event{
+		Kind: foldersync.EventScanned,
+		Manifest: &foldersync.Manifest{
+			Entries: []foldersync.Entry{*fileEntry("a.txt", 10)},
+		},
+	})
 	require.Empty(t, buf.String())
 }

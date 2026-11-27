@@ -72,15 +72,7 @@ var syncDestinationOnlyFlags = []string{
 }
 
 func syncCommand(c *cli.Context) error {
-	err := runSync(c)
-	if err == nil {
-		return nil
-	}
-	var coded interface{ ExitCode() int }
-	if errors.As(err, &coded) {
-		return err
-	}
-	return &ExitError{Code: 1, Err: err}
+	return mapSyncError(runSync(c))
 }
 
 func runSync(c *cli.Context) error {
@@ -98,12 +90,13 @@ func runSync(c *cli.Context) error {
 	setDebugLevel(c)
 	comm.Socks5Proxy = c.String("socks5")
 	comm.HttpProxy = c.String("connect")
-	reporter := newSyncReporter(os.Stderr, c.Bool("quiet"))
+	out, colorEnabled := termui.Output(os.Stderr)
+	reporter := newSyncReporter(out, dir, c.Bool("quiet"))
 
 	if isDestination {
-		return syncJoin(c, dir, envSecret, reporter)
+		return syncJoin(c, dir, envSecret, reporter, out, colorEnabled)
 	}
-	return syncHost(c, dir, reporter)
+	return syncHost(c, dir, reporter, out, colorEnabled)
 }
 
 func validateSyncFlags(c *cli.Context, isDestination bool) error {
@@ -159,7 +152,7 @@ func validateSyncDir(c *cli.Context) (string, error) {
 	return dir, nil
 }
 
-func syncHost(c *cli.Context, dir string, reporter foldersync.Reporter) error {
+func syncHost(c *cli.Context, dir string, reporter foldersync.Reporter, out io.Writer, colorEnabled bool) error {
 	transport, err := croc.ParseTransportMode(c.String("transport"))
 	if err != nil {
 		return err
@@ -285,10 +278,11 @@ Or enable classic mode if you accept that risk:
 	if err != nil {
 		return err
 	}
+	writeSyncSummary(out, res, c.Bool("quiet"), colorEnabled)
 	return syncResultError(res)
 }
 
-func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter) error {
+func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter, out io.Writer, colorEnabled bool) error {
 	crocOptions := croc.Options{
 		SharedSecret:     secret,
 		IsSender:         false,
@@ -320,6 +314,8 @@ func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter) 
 	}
 
 	dryRun := c.Bool("dry-run")
+	yes := c.Bool("yes")
+	quiet := c.Bool("quiet")
 	res, err := runSyncJoin(c.Context, foldersync.JoinOptions{
 		Dir: dir,
 		Diff: foldersync.DiffOptions{
@@ -328,27 +324,52 @@ func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter) 
 			AllowEmptySource: c.Bool("allow-empty-source"),
 		},
 		Croc: crocOptions,
-		Decide: func(*foldersync.Plan) (foldersync.Decision, error) {
-			if dryRun {
-				return foldersync.Decision{Proceed: false}, nil
-			}
-			return foldersync.Decision{Proceed: true, ConfirmDeletes: false}, nil
+		Decide: func(plan *foldersync.Plan) (foldersync.Decision, error) {
+			return decideSync(plan, syncDecideOptions{
+				Ctx:        c.Context,
+				DryRun:     dryRun,
+				Yes:        yes,
+				Quiet:      quiet,
+				IsTerminal: syncStdinIsTerminal(),
+				In:         os.Stdin,
+				Out:        out,
+				Color:      colorEnabled,
+			})
 		},
 		Reporter: reporter,
 	})
 	if err != nil {
 		return err
 	}
+	writeSyncSummary(out, res, quiet, colorEnabled)
 	return syncResultError(res)
 }
 
-func newSyncReporter(w io.Writer, quiet bool) foldersync.Reporter {
+func newSyncReporter(w io.Writer, folder string, quiet bool) foldersync.Reporter {
 	return foldersync.ReporterFunc(func(e foldersync.Event) {
-		if quiet {
+		if quiet || w == nil {
 			return
 		}
-		if e.Kind == foldersync.EventWarning && e.Message != "" {
-			fmt.Fprintf(w, "warning: %s\n", e.Message)
+		switch e.Kind {
+		case foldersync.EventScanned:
+			if e.Manifest == nil {
+				return
+			}
+			var files, folders int
+			var totalBytes int64
+			for _, entry := range e.Manifest.Entries {
+				if entry.IsDir() {
+					folders++
+				} else {
+					files++
+					totalBytes += entry.Size
+				}
+			}
+			fmt.Fprintf(w, "Scanned %s: %d files, %d folders (%s)\n", folder, files, folders, utils.ByteCountDecimal(totalBytes))
+		case foldersync.EventWarning:
+			if e.Message != "" {
+				fmt.Fprintf(w, "warning: %s\n", e.Message)
+			}
 		}
 	})
 }
