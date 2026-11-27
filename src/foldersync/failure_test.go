@@ -47,41 +47,85 @@ func noStagingLeft(t *testing.T, dstDir string) {
 }
 
 // interruptedRound chạy một lượt có giới hạn tốc độ và gọi interrupt khi dữ liệu đã
-// bắt đầu vào staging. Trả lỗi của hai bên.
+// bắt đầu vào staging. Nếu lượt kết thúc trước khi dữ liệu vào staging, thử lại tối
+// đa 3 lần với mã phòng mới. Trả lỗi của hai bên.
 func interruptedRound(t *testing.T, relay testRelay, srcDir, dstDir string, interrupt func(cancelJoin func())) (error, error) {
 	t.Helper()
-	secret := fmt.Sprintf("%d-folder-sync-cut", 7700+roomCounter.Add(1))
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	joinCtx, cancelJoin := context.WithCancel(ctx)
-	defer cancelJoin()
-	var hostErr, joinErr error
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		ops := crocOptions(relay, secret, true)
-		ops.ThrottleUpload = "1M"
-		_, hostErr = RunSyncHost(ctx, HostOptions{Dir: srcDir, Croc: ops})
-	}()
-	go func() {
-		defer wg.Done()
-		time.Sleep(100 * time.Millisecond)
-		_, joinErr = RunSyncJoin(joinCtx, JoinOptions{Dir: dstDir, Croc: crocOptions(relay, secret, false), Decide: confirmAll})
-	}()
-	deadline := time.Now().Add(30 * time.Second)
-	for !stagingHasData(dstDir) {
-		if time.Now().After(deadline) {
-			t.Fatal("transfer never started")
+	const maxAttempts = 3
+	var lastHostErr, lastJoinErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		secret := fmt.Sprintf("%d-folder-sync-cut", 7700+roomCounter.Add(1))
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		joinCtx, cancelJoin := context.WithCancel(ctx)
+		var hostErr, joinErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			ops := crocOptions(relay, secret, true)
+			ops.ThrottleUpload = "1M"
+			_, hostErr = RunSyncHost(ctx, HostOptions{Dir: srcDir, Croc: ops})
+		}()
+		go func() {
+			defer wg.Done()
+			time.Sleep(100 * time.Millisecond)
+			_, joinErr = RunSyncJoin(joinCtx, JoinOptions{Dir: dstDir, Croc: crocOptions(relay, secret, false), Decide: confirmAll})
+		}()
+
+		// Đóng kênh done khi cả hai goroutine kết thúc để không phải chờ tới hết hạn.
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
+		deadline := time.NewTimer(30 * time.Second)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		started := false
+		finished := false
+		for !started && !finished {
+			if stagingHasData(dstDir) {
+				started = true
+				break
+			}
+			select {
+			case <-done:
+				finished = true
+			case <-deadline.C:
+				ticker.Stop()
+				cancelJoin()
+				cancel()
+				select {
+				case <-done:
+					t.Fatalf("transfer never started (host=%v, join=%v)", hostErr, joinErr)
+				case <-time.After(5 * time.Second):
+					t.Fatal("transfer never started")
+				}
+			case <-ticker.C:
+			}
 		}
-		time.Sleep(5 * time.Millisecond)
+		deadline.Stop()
+		ticker.Stop()
+
+		if !started {
+			cancelJoin()
+			cancel()
+			lastHostErr, lastJoinErr = hostErr, joinErr
+			continue
+		}
+
+		interrupt(cancelJoin)
+		<-done
+		ctxErr := ctx.Err()
+		cancelJoin()
+		cancel()
+		if ctxErr != nil {
+			t.Fatal("interrupted round hung")
+		}
+		return hostErr, joinErr
 	}
-	interrupt(cancelJoin)
-	wg.Wait()
-	if ctx.Err() != nil {
-		t.Fatal("interrupted round hung")
-	}
-	return hostErr, joinErr
+	t.Fatalf("transfer never started after %d attempts (host=%v, join=%v)", maxAttempts, lastHostErr, lastJoinErr)
+	return nil, nil
 }
 
 func interruptFixture(t *testing.T) (srcDir, dstDir string, oldBig []byte) {
