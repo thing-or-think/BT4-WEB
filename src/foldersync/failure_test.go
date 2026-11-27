@@ -130,7 +130,8 @@ func interruptedRound(t *testing.T, relay testRelay, srcDir, dstDir string, inte
 
 func interruptFixture(t *testing.T) (srcDir, dstDir string, oldBig []byte) {
 	srcDir, dstDir = t.TempDir(), t.TempDir()
-	oldBig = bytes.Repeat([]byte("old!"), 1<<20)                               // 4 MiB
+	oldBig = bytes.Repeat([]byte("old!"), 1<<20)
+	oldBig = oldBig[:len(oldBig)-7]                                            // khác size với nguồn (4 MiB - 7B) để diff luôn tải lại
 	writeFile(t, srcDir, "big.bin", strings.Repeat("new-content-1234", 1<<18)) // 4 MiB, khác nội dung
 	writeFile(t, dstDir, "big.bin", string(oldBig))
 	writeFile(t, srcDir, "a.txt", "a")
