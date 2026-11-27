@@ -2,9 +2,12 @@ package receivefs
 
 import (
 	"errors"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -191,5 +194,59 @@ func TestRootConcurrentFilesystemMutationCannotEscape(t *testing.T) {
 		if _, err = os.Stat(escaped); !os.IsNotExist(err) {
 			t.Fatalf("filesystem race created %s outside root: %v", escaped, err)
 		}
+	}
+}
+
+func TestRootChmodAndReadDir(t *testing.T) {
+	dir := t.TempDir()
+	root, err := OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, name := range []string{"b.txt", "a.txt", "sub/c.txt"} {
+		if err := root.MkdirAll(path.Dir(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := root.WriteFileAtomic(name, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := root.ReadDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if strings.Join(names, ",") != "a.txt,b.txt,sub" {
+		t.Fatalf("ReadDir = %v", names)
+	}
+	if entries, err = root.ReadDir("sub"); err != nil || len(entries) != 1 {
+		t.Fatalf("ReadDir(sub) = %v, %v", entries, err)
+	}
+	if _, err := root.ReadDir("../x"); err == nil {
+		t.Fatal("traversal accepted")
+	}
+	if _, err := root.ReadDir("missing"); err == nil {
+		t.Fatal("missing directory accepted")
+	}
+
+	if err := root.Chmod("a.txt", 0o444|fs.ModeSetuid); err != nil {
+		t.Fatal(err)
+	}
+	info, err := root.Lstat("a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o200 != 0 {
+		t.Fatalf("mode = %v, want read-only", info.Mode())
+	}
+	if err := root.Chmod("a.txt", 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Chmod("../a.txt", 0o644); err == nil {
+		t.Fatal("traversal accepted")
 	}
 }

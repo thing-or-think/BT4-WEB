@@ -9,6 +9,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -186,6 +188,39 @@ func (r *Root) Chtimes(name string, atime, mtime time.Time) error {
 		return err
 	}
 	return r.root.Chtimes(clean, atime, mtime)
+}
+
+// Chmod sets permission bits on a validated path without following a symlink
+// component. Only the permission bits of mode are applied.
+func (r *Root) Chmod(name string, mode fs.FileMode) error {
+	clean, err := native(name, false)
+	if err != nil {
+		return err
+	}
+	if err = r.RejectSymlinkPath(name); err != nil {
+		return err
+	}
+	return r.root.Chmod(clean, mode.Perm())
+}
+
+// ReadDir lists a validated directory ("" or "." is the root) sorted by name,
+// refusing symlink components.
+func (r *Root) ReadDir(name string) ([]fs.DirEntry, error) {
+	clean, err := native(name, true)
+	if err != nil {
+		return nil, err
+	}
+	if err = r.RejectSymlinkPath(name); err != nil {
+		return nil, err
+	}
+	dir, err := r.root.Open(clean)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	entries, err := dir.ReadDir(-1)
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return entries, err
 }
 
 // RejectSymlinkPath preserves croc's refusal of existing symlink components.
