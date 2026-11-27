@@ -50,7 +50,15 @@ export default defineConfig({
   },
   reporter: [["line"]],
   projects: [
-    { name: "chromium", use: { browserName: "chromium" } },
+    {
+      name: "chromium",
+      use: {
+        browserName: "chromium",
+        ...(process.env.CROC_E2E_CHANNEL
+          ? { channel: process.env.CROC_E2E_CHANNEL }
+          : {}),
+      },
+    },
     {
       name: "firefox",
       grepInvert:
