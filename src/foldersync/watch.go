@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,8 +61,33 @@ func waitWatchBackoff(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// isFatalWatchError phân biệt lỗi không phải mạng (vi phạm giao thức, khóa đích, thư mục
-// không hợp lệ, thiếu hỗ trợ sync) cần kết thúc watch ngay thay vì nối lại.
+// peerErrorPrefix là tiền tố mà src/croc/croc.go gắn khi đối phương gửi bản tin TypeError.
+const peerErrorPrefix = "peer error:"
+
+// isPeerError kiểm tra lỗi có xuất phát từ bản tin lỗi tường minh (TypeError) của đối phương hay không.
+func isPeerError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if strings.HasPrefix(err.Error(), peerErrorPrefix) {
+		return true
+	}
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, sub := range multi.Unwrap() {
+			if isPeerError(sub) {
+				return true
+			}
+		}
+		return false
+	}
+	if inner := errors.Unwrap(err); inner != nil {
+		return isPeerError(inner)
+	}
+	return false
+}
+
+// isFatalWatchError phân biệt lỗi không phải mạng (vi phạm giao thức, lỗi từ chối từ đối phương,
+// khóa đích, thư mục không hợp lệ, thiếu hỗ trợ sync) cần kết thúc watch ngay thay vì nối lại.
 func isFatalWatchError(err error) bool {
 	if err == nil {
 		return false
@@ -73,7 +99,8 @@ func isFatalWatchError(err error) bool {
 		errors.Is(err, ErrInvalidEntry) ||
 		errors.Is(err, ErrUnsupportedKind) ||
 		errors.Is(err, receivefs.ErrUnsafePath) ||
-		errors.Is(err, croc.ErrPeerLacksSync)
+		errors.Is(err, croc.ErrPeerLacksSync) ||
+		isPeerError(err)
 }
 
 // clearStagingContents dọn sạch tệp và thư mục con trong staging trước mỗi lượt mới,
@@ -244,7 +271,9 @@ func runSyncHostWatch(ctx context.Context, o HostOptions) (*Result, error) {
 		if sendErr == nil {
 			return state.lastResult, nil
 		}
-		if isFatalWatchError(sendErr) || !state.established || state.rejoinCode == "" {
+		// Khi croc nhận TypeError trước pha truyền tệp, c.stop.Cancel() có thể khiến goroutine
+		// chuẩn bị tệp trả context.Canceled trước errchan dù ctx của người gọi chưa bị hủy.
+		if isFatalWatchError(sendErr) || errors.Is(sendErr, context.Canceled) || !state.established || state.rejoinCode == "" {
 			return state.lastResult, sendErr
 		}
 		if hook.reconnectedSent {

@@ -1,5 +1,5 @@
 import { BUNDLE_FEATURE } from "./bundle";
-import { textDecoder } from "./bytes";
+import { errorMessage, textDecoder } from "./bytes";
 import {
   establishReceiveSession,
   receiveOfferedFiles,
@@ -680,120 +680,144 @@ export async function runSyncOverChannel(options: {
     }
   };
 
+  const reportErrorToPeer = async (error: unknown) => {
+    try {
+      await channel.sendControl({
+        t: "error",
+        m: errorMessage(error).slice(0, 500),
+      });
+    } catch {
+      // The connection may already be gone.
+    }
+  };
+
   callbacks.onStatus?.("Negotiating sync…");
   await sendAll(session.start());
 
-  while (!session.waitingForFiles()) {
-    if (signal?.aborted) {
-      throw new DOMException("Transfer cancelled", "AbortError");
+  try {
+    while (!session.waitingForFiles()) {
+      if (signal?.aborted) {
+        throw new DOMException("Transfer cancelled", "AbortError");
+      }
+      const incoming = await channel.receiveControl();
+      if (incoming.t === "error") {
+        throw new Error(incoming.m || "Sender cancelled");
+      }
+      const outgoing = await session.handle({
+        t: incoming.t as string,
+        b: incoming.b,
+      });
+      await sendAll(outgoing);
     }
-    const incoming = await channel.receiveControl();
-    if (incoming.t === "error") {
-      throw new Error(incoming.m || "Sender cancelled");
-    }
-    const outgoing = await session.handle({
-      t: incoming.t as string,
-      b: incoming.b,
-    });
-    await sendAll(outgoing);
-  }
 
-  callbacks.onStatus?.("Waiting for file offer…");
-  let fileInfoMsg: CrocMessage;
-  for (;;) {
-    if (signal?.aborted) {
-      throw new DOMException("Transfer cancelled", "AbortError");
+    callbacks.onStatus?.("Waiting for file offer…");
+    let fileInfoMsg: CrocMessage;
+    for (;;) {
+      if (signal?.aborted) {
+        throw new DOMException("Transfer cancelled", "AbortError");
+      }
+      const incoming = await channel.receiveControl();
+      if ((incoming.t as string) === "sync-ping") {
+        const pong = await session.handle({ t: "sync-ping", b: incoming.b });
+        await sendAll(pong);
+        continue;
+      }
+      if ((incoming.t as string) === "sync-pong") {
+        await session.handle({ t: "sync-pong", b: incoming.b });
+        continue;
+      }
+      if (incoming.t === "error") {
+        throw new Error(incoming.m || "Sender cancelled");
+      }
+      if (incoming.t !== "fileinfo" || !incoming.b) {
+        throw new SyncProtocolError(
+          `expected fileinfo after sync-need, got ${incoming.t}`,
+        );
+      }
+      fileInfoMsg = incoming;
+      break;
     }
-    const incoming = await channel.receiveControl();
-    if ((incoming.t as string) === "sync-ping") {
-      const pong = await session.handle({ t: "sync-ping", b: incoming.b });
-      await sendAll(pong);
-      continue;
-    }
-    if ((incoming.t as string) === "sync-pong") {
-      await session.handle({ t: "sync-pong", b: incoming.b });
-      continue;
-    }
-    if (incoming.t === "error") {
-      throw new Error(incoming.m || "Sender cancelled");
-    }
-    if (incoming.t !== "fileinfo" || !incoming.b) {
-      throw new SyncProtocolError(
-        `expected fileinfo after sync-need, got ${incoming.t}`,
+
+    let senderInfo: SenderInfoWire;
+    try {
+      senderInfo = JSON.parse(
+        textDecoder.decode(fileInfoMsg.b),
+      ) as SenderInfoWire;
+    } catch (error) {
+      throw protoErr(
+        `invalid fileinfo JSON: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    fileInfoMsg = incoming;
-    break;
-  }
+    const offer = session.validateOffer(senderInfo);
 
-  let senderInfo: SenderInfoWire;
-  try {
-    senderInfo = JSON.parse(
-      textDecoder.decode(fileInfoMsg.b),
-    ) as SenderInfoWire;
-  } catch (error) {
-    throw protoErr(
-      `invalid fileinfo JSON: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  const offer = session.validateOffer(senderInfo);
-
-  if (session.decision().proceed) {
-    await committer!.prepareDirectories();
-    if (offer.files.length > 0) {
-      const destination: ReceiveDestination = {
-        async createEmptyFolder() {
-          throw protoErr(
-            "directories are created by the destination during sync",
-          );
-        },
-        async openFile(file: OfferedFile): Promise<ReceiveSink> {
-          const change = changesByPath.get(file.path);
-          if (!change) {
+    if (session.decision().proceed) {
+      await committer!.prepareDirectories();
+      if (offer.files.length > 0) {
+        const destination: ReceiveDestination = {
+          async createEmptyFolder() {
             throw protoErr(
-              `source offered "${file.path}", which the destination did not request`,
+              "directories are created by the destination during sync",
             );
-          }
-          return committer!.openSinkForChange(change, {
-            swallowCommitError: true,
-          });
-        },
-      };
+          },
+          async openFile(file: OfferedFile): Promise<ReceiveSink> {
+            const change = changesByPath.get(file.path);
+            if (!change) {
+              throw protoErr(
+                `source offered "${file.path}", which the destination did not request`,
+              );
+            }
+            return committer!.openSinkForChange(change, {
+              swallowCommitError: true,
+            });
+          },
+        };
 
-      await receiveOfferedFiles({
-        control: channel.controlSocket as CrocSocket,
-        data: channel.dataSockets,
-        key: channel.key,
-        cipherHandle: channel.cipherHandle,
-        peerFeatures: channel.peerFeatures,
-        offer,
-        destination,
-        callbacks: {
-          onStatus: (status) => callbacks.onStatus?.(status),
-          onProgress: (progress) => callbacks.onProgress?.(progress),
-        },
-        signal,
-        sendMessage: (msg) => channel.sendControl(msg),
-        receiveMessage: () => channel.receiveControl(),
-      });
+        await receiveOfferedFiles({
+          control: channel.controlSocket as CrocSocket,
+          data: channel.dataSockets,
+          key: channel.key,
+          cipherHandle: channel.cipherHandle,
+          peerFeatures: channel.peerFeatures,
+          offer,
+          destination,
+          callbacks: {
+            onStatus: (status) => callbacks.onStatus?.(status),
+            onProgress: (progress) => callbacks.onProgress?.(progress),
+          },
+          signal,
+          sendMessage: (msg) => channel.sendControl(msg),
+          receiveMessage: () => channel.receiveControl(),
+        });
+      }
     }
-  }
 
-  callbacks.onStatus?.("Finalizing sync…");
-  const finishMsgs = await session.finish();
-  await sendAll(finishMsgs);
-  const result = session.result()!;
-  callbacks.onResult?.(result);
+    callbacks.onStatus?.("Finalizing sync…");
+    const finishMsgs = await session.finish();
+    await sendAll(finishMsgs);
+    const result = session.result()!;
+    callbacks.onResult?.(result);
 
-  await channel.sendControl({ t: "finished" });
-  const finishedMsg = await channel.receiveControl();
-  if (finishedMsg.t !== "finished") {
-    throw new Error(`Expected transfer completion, got ${finishedMsg.t}`);
+    await channel.sendControl({ t: "finished" });
+    const finishedMsg = await channel.receiveControl();
+    if (finishedMsg.t !== "finished") {
+      throw new Error(`Expected transfer completion, got ${finishedMsg.t}`);
+    }
+    callbacks.onStatus?.(
+      result.dryRun ? "Dry run complete" : "Sync complete",
+    );
+    return result;
+  } catch (error) {
+    // Notify the peer with an explicit croc error before closing on deliberate
+    // refusals (watch mode, unsupported protocol version, wrong role, etc.)
+    // so a watching CLI source exits instead of reconnecting forever.
+    if (
+      error instanceof SyncWatchUnsupportedError ||
+      error instanceof SyncProtocolError
+    ) {
+      await reportErrorToPeer(error);
+    }
+    throw error;
   }
-  callbacks.onStatus?.(
-    result.dryRun ? "Dry run complete" : "Sync complete",
-  );
-  return result;
 }
 
 export async function syncReceive(
@@ -818,6 +842,7 @@ export async function syncReceive(
     signal,
   });
 
+  let peerErrorReported = false;
   try {
     if (!session.peerFeatures.includes(SYNC_FEATURE)) {
       throw new Error(SENDER_NOT_SYNC_ERROR);
@@ -825,6 +850,9 @@ export async function syncReceive(
 
     const channel: SyncChannel = {
       sendControl(msg) {
+        if (msg.t === "error") {
+          peerErrorReported = true;
+        }
         return sendControl(
           session.control,
           msg as unknown as CrocMessage,
@@ -851,8 +879,7 @@ export async function syncReceive(
       hashCache,
     });
   } catch (error) {
-    // Watch refusal must fail after sending nothing else.
-    if (!(error instanceof SyncWatchUnsupportedError)) {
+    if (!peerErrorReported) {
       await reportPeerError(session.control, session.key, error);
     }
     throw error;

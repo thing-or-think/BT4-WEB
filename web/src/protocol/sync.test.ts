@@ -39,6 +39,7 @@ import {
   encodeHello,
   encodeManifest,
   type SyncResult,
+  type SyncRole,
   type SyncWireMessage,
 } from "./sync-wire";
 import type { CrocSocket } from "./transport";
@@ -330,6 +331,8 @@ interface ScriptedSourceOptions {
   manifest: SyncManifest;
   files: Record<string, string>;
   watch?: boolean;
+  helloVersion?: number;
+  helloRole?: SyncRole;
   peerFeatures?: string[];
   tamperOffer?: (offer: SenderInfoWire) => SenderInfoWire;
   changedHashPaths?: Set<string>;
@@ -344,8 +347,8 @@ function createScriptedChannel(opts: ScriptedSourceOptions) {
 
   const initial: SyncWireMessage[] = [
     encodeHello({
-      version: SYNC_PROTOCOL_VERSION,
-      role: "source",
+      version: opts.helloVersion ?? SYNC_PROTOCOL_VERSION,
+      role: opts.helloRole ?? "source",
       watch: opts.watch,
     }),
     ...encodeManifest(opts.manifest),
@@ -647,7 +650,7 @@ describe("sync destination protocol (scripted source, no network)", () => {
     expect(root.readText("existing.txt")).toBe("keep");
   });
 
-  it("refuses watch mode after sending nothing else", async () => {
+  it("refuses watch mode and sends a peer error before closing", async () => {
     const root = new FakeDirHandle("dest");
     const scripted = createScriptedChannel({
       manifest: { entries: [], skipped: [], complete: true },
@@ -663,7 +666,58 @@ describe("sync destination protocol (scripted source, no network)", () => {
       }),
     ).rejects.toThrow(WATCH_UNSUPPORTED_ERROR);
 
-    expect(scripted.sentByDest.map((m) => m.t)).toEqual(["sync-hello"]);
+    expect(scripted.sentByDest.map((m) => m.t)).toEqual([
+      "sync-hello",
+      "error",
+    ]);
+    expect((scripted.sentByDest[1] as CrocMessage).m).toBe(
+      WATCH_UNSUPPORTED_ERROR,
+    );
+  });
+
+  it("sends a peer error when refusing unsupported protocol version or wrong role", async () => {
+    const versionRoot = new FakeDirHandle("dest");
+    const badVersion = createScriptedChannel({
+      manifest: { entries: [], skipped: [], complete: true },
+      files: {},
+      helloVersion: SYNC_PROTOCOL_VERSION + 1,
+    });
+
+    await expect(
+      runSyncOverChannel({
+        channel: badVersion.channel,
+        root: versionRoot.asHandle(),
+        decide: async () => ({ proceed: true, confirmDeletes: false }),
+      }),
+    ).rejects.toThrow(SyncProtocolError);
+
+    expect(badVersion.sentByDest.map((m) => m.t)).toEqual([
+      "sync-hello",
+      "error",
+    ]);
+    expect((badVersion.sentByDest[1] as CrocMessage).m).toContain(
+      `peer speaks sync protocol ${SYNC_PROTOCOL_VERSION + 1}`,
+    );
+
+    const roleRoot = new FakeDirHandle("dest");
+    const badRole = createScriptedChannel({
+      manifest: { entries: [], skipped: [], complete: true },
+      files: {},
+      helloRole: "destination",
+    });
+
+    await expect(
+      runSyncOverChannel({
+        channel: badRole.channel,
+        root: roleRoot.asHandle(),
+        decide: async () => ({ proceed: true, confirmDeletes: false }),
+      }),
+    ).rejects.toThrow(SyncProtocolError);
+
+    expect(badRole.sentByDest.map((m) => m.t)).toEqual(["sync-hello", "error"]);
+    expect((badRole.sentByDest[1] as CrocMessage).m).toContain(
+      'peer role "destination"',
+    );
   });
 
   it("fails clearly when the sender did not advertise folder-sync-v1", async () => {

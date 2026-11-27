@@ -747,3 +747,139 @@ func TestWatchLatency(t *testing.T) {
 
 	wp.stopAndCheckNil(t, 5*time.Second)
 }
+
+// refusingDestHook mô phỏng máy đích hoàn tất bắt tay đồng bộ rồi gửi bản tin TypeError
+// tường minh để từ chối phiên watch.
+type refusingDestHook struct {
+	reason string
+}
+
+var (
+	_ croc.SyncHook     = (*refusingDestHook)(nil)
+	_ croc.SyncFinisher = (*refusingDestHook)(nil)
+)
+
+func (h *refusingDestHook) Feature() string { return message.FeatureFolderSync }
+
+func (h *refusingDestHook) Start(send func(message.Message) error) error {
+	hello, err := encodeMsg(message.TypeSyncHello, Hello{
+		Version: ProtocolVersion,
+		Role:    RoleDestination,
+	})
+	if err != nil {
+		return err
+	}
+	return send(hello)
+}
+
+func (h *refusingDestHook) Handle(m message.Message, send func(message.Message) error) error {
+	if m.Type == message.TypeSyncManifestEnd {
+		msgs, err := encodePathLists(message.TypeSyncNeed, nil)
+		if err != nil {
+			return err
+		}
+		for _, out := range msgs {
+			if err := send(out); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (h *refusingDestHook) Ready() (bool, func(croc.FileInfo) bool) {
+	return false, nil
+}
+
+func (h *refusingDestHook) BeforeFinish(send func(message.Message) error) error {
+	_ = send(message.Message{
+		Type:    message.TypeError,
+		Message: h.reason,
+	})
+	return errors.New(h.reason)
+}
+
+func TestWatchPeerErrorRefusalStopsImmediately(t *testing.T) {
+	// Kiểm tra đơn vị isFatalWatchError phân biệt lỗi tường minh từ đối phương với lỗi mạng.
+	if !isFatalWatchError(fmt.Errorf("peer error: refusing files")) {
+		t.Fatal("isFatalWatchError(peer error) = false, want true")
+	}
+	if !isFatalWatchError(fmt.Errorf("wrapped: %w", fmt.Errorf("peer error: unsupported version"))) {
+		t.Fatal("isFatalWatchError(wrapped peer error) = false, want true")
+	}
+	if !isFatalWatchError(errors.Join(errors.New("cleanup"), fmt.Errorf("peer error: watch refused"))) {
+		t.Fatal("isFatalWatchError(joined peer error) = false, want true")
+	}
+	if isFatalWatchError(errors.New("transfer disconnected: connection reset by peer")) {
+		t.Fatal("isFatalWatchError(network disconnect) = true, want false")
+	}
+
+	setWatchTimers(t, 1*time.Second, 100*time.Millisecond, 500*time.Millisecond)
+
+	var newClientCalls atomic.Int32
+	origNewClient := newClient
+	newClient = func(ctx context.Context, ops croc.Options) (*croc.Client, error) {
+		newClientCalls.Add(1)
+		return origNewClient(ctx, ops)
+	}
+	t.Cleanup(func() { newClient = origNewClient })
+
+	relay := startRelay(t)
+	srcDir, dstRoot := t.TempDir(), t.TempDir()
+	writeFile(t, srcDir, "hello.txt", "initial")
+
+	const refusalReason = "Watching (--watch) is not supported by web sync yet; run croc sync without --watch"
+	secret := fmt.Sprintf("%d-folder-sync-refuse", 8500+roomCounter.Add(1))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	hostDone := make(chan error, 1)
+	go func() {
+		_, err := RunSyncHost(ctx, HostOptions{
+			Dir:          srcDir,
+			Croc:         crocOptions(relay, secret, true),
+			Watch:        true,
+			WatchOptions: shortWatchOptions(),
+		})
+		hostDone <- err
+	}()
+
+	recvDone := make(chan error, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		recvOps := crocOptions(relay, secret, false)
+		recvOps.ReceiveRoot = dstRoot
+		recvOps.SyncHook = &refusingDestHook{reason: refusalReason}
+		client, err := origNewClient(ctx, recvOps)
+		if err != nil {
+			recvDone <- err
+			return
+		}
+		recvDone <- client.Receive()
+	}()
+
+	select {
+	case hostErr := <-hostDone:
+		if hostErr == nil {
+			t.Fatal("RunSyncHost returned nil, want peer refusal error")
+		}
+		if !strings.Contains(hostErr.Error(), peerErrorPrefix) || !strings.Contains(hostErr.Error(), refusalReason) {
+			t.Fatalf("RunSyncHost error = %v, want peer error containing %q", hostErr, refusalReason)
+		}
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatalf("RunSyncHost did not return within 5s after destination refusal (newClient calls=%d)", newClientCalls.Load())
+	}
+
+	if got := newClientCalls.Load(); got != 1 {
+		t.Fatalf("newClient calls = %d, want 1", got)
+	}
+
+	select {
+	case <-recvDone:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("refusing destination did not exit within 5s")
+	}
+}
