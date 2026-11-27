@@ -1,0 +1,896 @@
+{
+  "timestamp": "2026-11-27T07:31:19Z",
+  "goos": "windows",
+  "goarch": "amd64",
+  "croc_binary": "croc.exe built from feat/folder-sync",
+  "scale": 1,
+  "runs_per_case": 5,
+  "relay_host": "127.0.0.2",
+  "proxy_all_ports": true,
+  "datasets": [
+    {
+      "name": "small",
+      "files": 10000,
+      "folders": 100,
+      "total_bytes": 45657615
+    },
+    {
+      "name": "large",
+      "files": 20,
+      "folders": 0,
+      "total_bytes": 838860800
+    },
+    {
+      "name": "mixed",
+      "files": 2005,
+      "folders": 260,
+      "total_bytes": 1051397273
+    }
+  ],
+  "cases": [
+    {
+      "dataset": "small",
+      "mode": "send",
+      "runs": 5,
+      "time_seconds": {
+        "median": 101.9458472,
+        "min": 77.1034982,
+        "max": 198.8159717
+      },
+      "network_bytes": {
+        "median": 93972858,
+        "min": 93972850,
+        "max": 93972916
+      },
+      "source_ram_bytes": {
+        "median": 57913344,
+        "min": 57225216,
+        "max": 63369216
+      },
+      "dest_ram_bytes": {
+        "median": 52760576,
+        "min": 51769344,
+        "max": 54407168
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1000-sync-bench-1",
+          "seconds": 198.8159717,
+          "network_bytes": 93972860,
+          "source_ram_bytes": 61145088,
+          "dest_ram_bytes": 52310016,
+          "verified_hash": false
+        },
+        {
+          "run": 2,
+          "code": "1001-sync-bench-2",
+          "seconds": 77.1034982,
+          "network_bytes": 93972916,
+          "source_ram_bytes": 57389056,
+          "dest_ram_bytes": 52760576,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1002-sync-bench-3",
+          "seconds": 106.156189,
+          "network_bytes": 93972850,
+          "source_ram_bytes": 63369216,
+          "dest_ram_bytes": 51769344,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1003-sync-bench-4",
+          "seconds": 101.9458472,
+          "network_bytes": 93972858,
+          "source_ram_bytes": 57913344,
+          "dest_ram_bytes": 53825536,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1004-sync-bench-5",
+          "seconds": 86.6061654,
+          "network_bytes": 93972858,
+          "source_ram_bytes": 57225216,
+          "dest_ram_bytes": 54407168,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "small",
+      "mode": "sync-first",
+      "runs": 5,
+      "time_seconds": {
+        "median": 124.8013161,
+        "min": 123.9973132,
+        "max": 125.1594303
+      },
+      "network_bytes": {
+        "median": 97570868,
+        "min": 97570847,
+        "max": 97570877
+      },
+      "source_ram_bytes": {
+        "median": 58679296,
+        "min": 56295424,
+        "max": 59523072
+      },
+      "dest_ram_bytes": {
+        "median": 66564096,
+        "min": 64364544,
+        "max": 68726784
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1005-sync-bench-6",
+          "seconds": 123.9973132,
+          "network_bytes": 97570868,
+          "source_ram_bytes": 56295424,
+          "dest_ram_bytes": 65892352,
+          "verified_hash": true
+        },
+        {
+          "run": 2,
+          "code": "1006-sync-bench-7",
+          "seconds": 124.4196623,
+          "network_bytes": 97570847,
+          "source_ram_bytes": 58679296,
+          "dest_ram_bytes": 68726784,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1007-sync-bench-8",
+          "seconds": 124.8013161,
+          "network_bytes": 97570858,
+          "source_ram_bytes": 56467456,
+          "dest_ram_bytes": 66564096,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1008-sync-bench-9",
+          "seconds": 125.1594303,
+          "network_bytes": 97570869,
+          "source_ram_bytes": 59342848,
+          "dest_ram_bytes": 66813952,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1009-sync-bench-10",
+          "seconds": 125.0797777,
+          "network_bytes": 97570877,
+          "source_ram_bytes": 59523072,
+          "dest_ram_bytes": 64364544,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "small",
+      "mode": "sync-unchanged",
+      "runs": 5,
+      "time_seconds": {
+        "median": 0.2917706,
+        "min": 0.2885648,
+        "max": 0.2945813
+      },
+      "network_bytes": {
+        "median": 1886529,
+        "min": 1886515,
+        "max": 1886553
+      },
+      "source_ram_bytes": {
+        "median": 40710144,
+        "min": 40583168,
+        "max": 42987520
+      },
+      "dest_ram_bytes": {
+        "median": 36909056,
+        "min": 36577280,
+        "max": 44326912
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1010-sync-bench-11",
+          "seconds": 0.2945813,
+          "network_bytes": 1886525,
+          "source_ram_bytes": 42987520,
+          "dest_ram_bytes": 44326912,
+          "verified_hash": false
+        },
+        {
+          "run": 2,
+          "code": "1011-sync-bench-12",
+          "seconds": 0.2917706,
+          "network_bytes": 1886529,
+          "source_ram_bytes": 40583168,
+          "dest_ram_bytes": 36933632,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1012-sync-bench-13",
+          "seconds": 0.2885648,
+          "network_bytes": 1886543,
+          "source_ram_bytes": 40710144,
+          "dest_ram_bytes": 36577280,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1013-sync-bench-14",
+          "seconds": 0.2895752,
+          "network_bytes": 1886553,
+          "source_ram_bytes": 40624128,
+          "dest_ram_bytes": 36610048,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1014-sync-bench-15",
+          "seconds": 0.2941053,
+          "network_bytes": 1886515,
+          "source_ram_bytes": 42225664,
+          "dest_ram_bytes": 36909056,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "small",
+      "mode": "sync-5pct",
+      "runs": 5,
+      "time_seconds": {
+        "median": 12.4928537,
+        "min": 12.0104796,
+        "max": 12.6583965
+      },
+      "network_bytes": {
+        "median": 6703390,
+        "min": 6574952,
+        "max": 6833411
+      },
+      "source_ram_bytes": {
+        "median": 46542848,
+        "min": 44396544,
+        "max": 47767552
+      },
+      "dest_ram_bytes": {
+        "median": 44281856,
+        "min": 42565632,
+        "max": 44785664
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1015-sync-bench-16",
+          "seconds": 12.2786196,
+          "network_bytes": 6634574,
+          "source_ram_bytes": 44396544,
+          "dest_ram_bytes": 44785664,
+          "verified_hash": true
+        },
+        {
+          "run": 2,
+          "code": "1016-sync-bench-17",
+          "seconds": 12.6197374,
+          "network_bytes": 6833411,
+          "source_ram_bytes": 46542848,
+          "dest_ram_bytes": 44281856,
+          "verified_hash": true
+        },
+        {
+          "run": 3,
+          "code": "1017-sync-bench-18",
+          "seconds": 12.4928537,
+          "network_bytes": 6733893,
+          "source_ram_bytes": 45973504,
+          "dest_ram_bytes": 44572672,
+          "verified_hash": true
+        },
+        {
+          "run": 4,
+          "code": "1018-sync-bench-19",
+          "seconds": 12.0104796,
+          "network_bytes": 6703390,
+          "source_ram_bytes": 47767552,
+          "dest_ram_bytes": 42565632,
+          "verified_hash": true
+        },
+        {
+          "run": 5,
+          "code": "1019-sync-bench-20",
+          "seconds": 12.6583965,
+          "network_bytes": 6574952,
+          "source_ram_bytes": 46956544,
+          "dest_ram_bytes": 44052480,
+          "verified_hash": true
+        }
+      ]
+    },
+    {
+      "dataset": "large",
+      "mode": "send",
+      "runs": 5,
+      "time_seconds": {
+        "median": 7.8954165,
+        "min": 2.1669178000000002,
+        "max": 8.9548043
+      },
+      "network_bytes": {
+        "median": 1680012201,
+        "min": 1680012193,
+        "max": 1680012215
+      },
+      "source_ram_bytes": {
+        "median": 26603520,
+        "min": 26263552,
+        "max": 26804224
+      },
+      "dest_ram_bytes": {
+        "median": 28217344,
+        "min": 27549696,
+        "max": 28942336
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1020-sync-bench-21",
+          "seconds": 2.9835248,
+          "network_bytes": 1680012196,
+          "source_ram_bytes": 26767360,
+          "dest_ram_bytes": 28852224,
+          "verified_hash": false
+        },
+        {
+          "run": 2,
+          "code": "1021-sync-bench-22",
+          "seconds": 2.1669178000000002,
+          "network_bytes": 1680012203,
+          "source_ram_bytes": 26603520,
+          "dest_ram_bytes": 28168192,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1022-sync-bench-23",
+          "seconds": 7.8954165,
+          "network_bytes": 1680012201,
+          "source_ram_bytes": 26804224,
+          "dest_ram_bytes": 27549696,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1023-sync-bench-24",
+          "seconds": 8.9548043,
+          "network_bytes": 1680012193,
+          "source_ram_bytes": 26263552,
+          "dest_ram_bytes": 28217344,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1024-sync-bench-25",
+          "seconds": 8.5334086,
+          "network_bytes": 1680012215,
+          "source_ram_bytes": 26533888,
+          "dest_ram_bytes": 28942336,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "large",
+      "mode": "sync-first",
+      "runs": 5,
+      "time_seconds": {
+        "median": 2.4772757,
+        "min": 2.454772,
+        "max": 3.0181389
+      },
+      "network_bytes": {
+        "median": 1680020384,
+        "min": 1680020364,
+        "max": 1680020387
+      },
+      "source_ram_bytes": {
+        "median": 27824128,
+        "min": 26832896,
+        "max": 28786688
+      },
+      "dest_ram_bytes": {
+        "median": 33914880,
+        "min": 30756864,
+        "max": 34754560
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1025-sync-bench-26",
+          "seconds": 3.0181389,
+          "network_bytes": 1680020387,
+          "source_ram_bytes": 28786688,
+          "dest_ram_bytes": 33337344,
+          "verified_hash": true
+        },
+        {
+          "run": 2,
+          "code": "1026-sync-bench-27",
+          "seconds": 2.4592316,
+          "network_bytes": 1680020364,
+          "source_ram_bytes": 27824128,
+          "dest_ram_bytes": 30756864,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1027-sync-bench-28",
+          "seconds": 2.454772,
+          "network_bytes": 1680020383,
+          "source_ram_bytes": 26832896,
+          "dest_ram_bytes": 34308096,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1028-sync-bench-29",
+          "seconds": 2.5000014999999998,
+          "network_bytes": 1680020386,
+          "source_ram_bytes": 27328512,
+          "dest_ram_bytes": 34754560,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1029-sync-bench-30",
+          "seconds": 2.4772757,
+          "network_bytes": 1680020384,
+          "source_ram_bytes": 27951104,
+          "dest_ram_bytes": 33914880,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "large",
+      "mode": "sync-unchanged",
+      "runs": 5,
+      "time_seconds": {
+        "median": 0.1331165,
+        "min": 0.1262575,
+        "max": 0.1364522
+      },
+      "network_bytes": {
+        "median": 21722,
+        "min": 21715,
+        "max": 21727
+      },
+      "source_ram_bytes": {
+        "median": 24313856,
+        "min": 24215552,
+        "max": 24875008
+      },
+      "dest_ram_bytes": {
+        "median": 26820608,
+        "min": 26722304,
+        "max": 27357184
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1030-sync-bench-31",
+          "seconds": 0.1350033,
+          "network_bytes": 21715,
+          "source_ram_bytes": 24313856,
+          "dest_ram_bytes": 26910720,
+          "verified_hash": false
+        },
+        {
+          "run": 2,
+          "code": "1031-sync-bench-32",
+          "seconds": 0.1331165,
+          "network_bytes": 21721,
+          "source_ram_bytes": 24875008,
+          "dest_ram_bytes": 27357184,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1032-sync-bench-33",
+          "seconds": 0.126397,
+          "network_bytes": 21727,
+          "source_ram_bytes": 24403968,
+          "dest_ram_bytes": 26759168,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1033-sync-bench-34",
+          "seconds": 0.1262575,
+          "network_bytes": 21722,
+          "source_ram_bytes": 24215552,
+          "dest_ram_bytes": 26722304,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1034-sync-bench-35",
+          "seconds": 0.1364522,
+          "network_bytes": 21722,
+          "source_ram_bytes": 24268800,
+          "dest_ram_bytes": 26820608,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "large",
+      "mode": "sync-5pct",
+      "runs": 5,
+      "time_seconds": {
+        "median": 0.2926421,
+        "min": 0.2875851,
+        "max": 0.3154883
+      },
+      "network_bytes": {
+        "median": 84022437,
+        "min": 84022425,
+        "max": 84022503
+      },
+      "source_ram_bytes": {
+        "median": 26599424,
+        "min": 26021888,
+        "max": 26882048
+      },
+      "dest_ram_bytes": {
+        "median": 28467200,
+        "min": 28061696,
+        "max": 28643328
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1035-sync-bench-36",
+          "seconds": 0.3154883,
+          "network_bytes": 84022503,
+          "source_ram_bytes": 26841088,
+          "dest_ram_bytes": 28643328,
+          "verified_hash": true
+        },
+        {
+          "run": 2,
+          "code": "1036-sync-bench-37",
+          "seconds": 0.292118,
+          "network_bytes": 84022440,
+          "source_ram_bytes": 26882048,
+          "dest_ram_bytes": 28475392,
+          "verified_hash": true
+        },
+        {
+          "run": 3,
+          "code": "1037-sync-bench-38",
+          "seconds": 0.2995131,
+          "network_bytes": 84022433,
+          "source_ram_bytes": 26599424,
+          "dest_ram_bytes": 28196864,
+          "verified_hash": true
+        },
+        {
+          "run": 4,
+          "code": "1038-sync-bench-39",
+          "seconds": 0.2875851,
+          "network_bytes": 84022437,
+          "source_ram_bytes": 26021888,
+          "dest_ram_bytes": 28467200,
+          "verified_hash": true
+        },
+        {
+          "run": 5,
+          "code": "1039-sync-bench-40",
+          "seconds": 0.2926421,
+          "network_bytes": 84022425,
+          "source_ram_bytes": 26128384,
+          "dest_ram_bytes": 28061696,
+          "verified_hash": true
+        }
+      ]
+    },
+    {
+      "dataset": "mixed",
+      "mode": "send",
+      "runs": 5,
+      "time_seconds": {
+        "median": 23.9516493,
+        "min": 22.8884706,
+        "max": 55.6766047
+      },
+      "network_bytes": {
+        "median": 2106197922,
+        "min": 2106197859,
+        "max": 2106197948
+      },
+      "source_ram_bytes": {
+        "median": 34463744,
+        "min": 33419264,
+        "max": 35213312
+      },
+      "dest_ram_bytes": {
+        "median": 36032512,
+        "min": 35618816,
+        "max": 36438016
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1040-sync-bench-41",
+          "seconds": 55.6766047,
+          "network_bytes": 2106197924,
+          "source_ram_bytes": 35213312,
+          "dest_ram_bytes": 35618816,
+          "verified_hash": false
+        },
+        {
+          "run": 2,
+          "code": "1041-sync-bench-42",
+          "seconds": 24.4761588,
+          "network_bytes": 2106197859,
+          "source_ram_bytes": 34201600,
+          "dest_ram_bytes": 36032512,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1042-sync-bench-43",
+          "seconds": 23.9516493,
+          "network_bytes": 2106197948,
+          "source_ram_bytes": 34787328,
+          "dest_ram_bytes": 36438016,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1043-sync-bench-44",
+          "seconds": 22.8884706,
+          "network_bytes": 2106197915,
+          "source_ram_bytes": 33419264,
+          "dest_ram_bytes": 36139008,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1044-sync-bench-45",
+          "seconds": 23.7444792,
+          "network_bytes": 2106197922,
+          "source_ram_bytes": 34463744,
+          "dest_ram_bytes": 35876864,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "mixed",
+      "mode": "sync-first",
+      "runs": 5,
+      "time_seconds": {
+        "median": 38.6746063,
+        "min": 38.2541858,
+        "max": 39.2033166
+      },
+      "network_bytes": {
+        "median": 2107021402,
+        "min": 2107021343,
+        "max": 2107021419
+      },
+      "source_ram_bytes": {
+        "median": 34934784,
+        "min": 34512896,
+        "max": 35405824
+      },
+      "dest_ram_bytes": {
+        "median": 40861696,
+        "min": 39505920,
+        "max": 44273664
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1045-sync-bench-46",
+          "seconds": 39.2033166,
+          "network_bytes": 2107021419,
+          "source_ram_bytes": 34934784,
+          "dest_ram_bytes": 44273664,
+          "verified_hash": true
+        },
+        {
+          "run": 2,
+          "code": "1046-sync-bench-47",
+          "seconds": 38.2541858,
+          "network_bytes": 2107021347,
+          "source_ram_bytes": 34512896,
+          "dest_ram_bytes": 41598976,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1047-sync-bench-48",
+          "seconds": 38.2799208,
+          "network_bytes": 2107021412,
+          "source_ram_bytes": 34902016,
+          "dest_ram_bytes": 39985152,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1048-sync-bench-49",
+          "seconds": 38.6746063,
+          "network_bytes": 2107021343,
+          "source_ram_bytes": 35172352,
+          "dest_ram_bytes": 40861696,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1049-sync-bench-50",
+          "seconds": 38.906694,
+          "network_bytes": 2107021402,
+          "source_ram_bytes": 35405824,
+          "dest_ram_bytes": 39505920,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "mixed",
+      "mode": "sync-unchanged",
+      "runs": 5,
+      "time_seconds": {
+        "median": 0.1958894,
+        "min": 0.1935566,
+        "max": 0.1977116
+      },
+      "network_bytes": {
+        "median": 452081,
+        "min": 452074,
+        "max": 452090
+      },
+      "source_ram_bytes": {
+        "median": 29732864,
+        "min": 29396992,
+        "max": 30158848
+      },
+      "dest_ram_bytes": {
+        "median": 28880896,
+        "min": 28704768,
+        "max": 29802496
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1050-sync-bench-51",
+          "seconds": 0.1958894,
+          "network_bytes": 452075,
+          "source_ram_bytes": 29732864,
+          "dest_ram_bytes": 29802496,
+          "verified_hash": false
+        },
+        {
+          "run": 2,
+          "code": "1051-sync-bench-52",
+          "seconds": 0.1977116,
+          "network_bytes": 452074,
+          "source_ram_bytes": 30158848,
+          "dest_ram_bytes": 28704768,
+          "verified_hash": false
+        },
+        {
+          "run": 3,
+          "code": "1052-sync-bench-53",
+          "seconds": 0.1938631,
+          "network_bytes": 452082,
+          "source_ram_bytes": 30121984,
+          "dest_ram_bytes": 29024256,
+          "verified_hash": false
+        },
+        {
+          "run": 4,
+          "code": "1053-sync-bench-54",
+          "seconds": 0.195925,
+          "network_bytes": 452081,
+          "source_ram_bytes": 29442048,
+          "dest_ram_bytes": 28880896,
+          "verified_hash": false
+        },
+        {
+          "run": 5,
+          "code": "1054-sync-bench-55",
+          "seconds": 0.1935566,
+          "network_bytes": 452090,
+          "source_ram_bytes": 29396992,
+          "dest_ram_bytes": 28762112,
+          "verified_hash": false
+        }
+      ]
+    },
+    {
+      "dataset": "mixed",
+      "mode": "sync-5pct",
+      "runs": 5,
+      "time_seconds": {
+        "median": 2.2661435,
+        "min": 2.1482645,
+        "max": 2.655196
+      },
+      "network_bytes": {
+        "median": 61611440,
+        "min": 19587179,
+        "max": 136912526
+      },
+      "source_ram_bytes": {
+        "median": 32845824,
+        "min": 31805440,
+        "max": 32968704
+      },
+      "dest_ram_bytes": {
+        "median": 34971648,
+        "min": 33255424,
+        "max": 35516416
+      },
+      "trials": [
+        {
+          "run": 1,
+          "code": "1055-sync-bench-56",
+          "seconds": 2.39506,
+          "network_bytes": 69440040,
+          "source_ram_bytes": 32243712,
+          "dest_ram_bytes": 34000896,
+          "verified_hash": true
+        },
+        {
+          "run": 2,
+          "code": "1056-sync-bench-57",
+          "seconds": 2.1482645,
+          "network_bytes": 19587179,
+          "source_ram_bytes": 32968704,
+          "dest_ram_bytes": 35512320,
+          "verified_hash": true
+        },
+        {
+          "run": 3,
+          "code": "1057-sync-bench-58",
+          "seconds": 2.2454139,
+          "network_bytes": 47767670,
+          "source_ram_bytes": 32915456,
+          "dest_ram_bytes": 34971648,
+          "verified_hash": true
+        },
+        {
+          "run": 4,
+          "code": "1058-sync-bench-59",
+          "seconds": 2.2661435,
+          "network_bytes": 61611440,
+          "source_ram_bytes": 31805440,
+          "dest_ram_bytes": 33255424,
+          "verified_hash": true
+        },
+        {
+          "run": 5,
+          "code": "1059-sync-bench-60",
+          "seconds": 2.655196,
+          "network_bytes": 136912526,
+          "source_ram_bytes": 32845824,
+          "dest_ram_bytes": 35516416,
+          "verified_hash": true
+        }
+      ]
+    }
+  ]
+}
