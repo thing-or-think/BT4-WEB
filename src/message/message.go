@@ -69,6 +69,8 @@ const (
 	TypeSyncHashResult    Type = "sync-hash-result"
 	TypeSyncNeed          Type = "sync-need"
 	TypeSyncResult        Type = "sync-result"
+	TypeSyncPing          Type = "sync-ping"
+	TypeSyncPong          Type = "sync-pong"
 )
 
 // FeatureFolderSync is advertised during PAKE only by croc sync. Like other

@@ -54,10 +54,11 @@ const (
 // Start/Handle/Finish trả về các bản tin cần gửi. Mọi lỗi giao thức đưa phiên vào
 // trạng thái hỏng và mọi bản tin sau đó đều bị từ chối.
 type Session struct {
-	role    Role
-	state   sessionState
-	hello   Hello
-	started bool
+	role      Role
+	state     sessionState
+	hello     Hello
+	peerHello Hello
+	started   bool
 
 	// Nguồn
 	local    *Manifest
@@ -104,6 +105,9 @@ func NewDestSession(env DestEnv, opts DiffOptions, hello Hello) *Session {
 // Role trả vai trò của phiên.
 func (s *Session) Role() Role { return s.role }
 
+// PeerHello trả bản tin Hello đã nhận từ phía bên kia (rỗng nếu chưa nhận).
+func (s *Session) PeerHello() Hello { return s.peerHello }
+
 // Start trả các bản tin gửi ngay khi kênh đã mã hóa.
 func (s *Session) Start() ([]message.Message, error) {
 	if s.started {
@@ -135,6 +139,18 @@ func (s *Session) Handle(m message.Message) ([]message.Message, error) {
 	if s.state == stFailed {
 		return nil, protoErr("%s after the session failed", m.Type)
 	}
+	if m.Type == message.TypeSyncPing {
+		if len(m.Bytes) > MaxBatchBytes {
+			return nil, s.fail(protoErr("%s payload %d bytes > %d", m.Type, len(m.Bytes), MaxBatchBytes))
+		}
+		return []message.Message{{Type: message.TypeSyncPong}}, nil
+	}
+	if m.Type == message.TypeSyncPong {
+		if len(m.Bytes) > MaxBatchBytes {
+			return nil, s.fail(protoErr("%s payload %d bytes > %d", m.Type, len(m.Bytes), MaxBatchBytes))
+		}
+		return nil, nil
+	}
 	if s.state == stDone {
 		return nil, s.fail(protoErr("%s after the session finished", m.Type))
 	}
@@ -156,6 +172,7 @@ func (s *Session) Handle(m message.Message) ([]message.Message, error) {
 		if h.Role != want {
 			return nil, s.fail(protoErr("peer role %q, want %q (run croc sync <dir> on one computer and join from the other)", h.Role, want))
 		}
+		s.peerHello = h
 		if s.role == RoleSource {
 			s.state = stServing
 		} else {
@@ -239,9 +256,9 @@ func (s *Session) handleSource(m message.Message) ([]message.Message, error) {
 	return nil, protoErr("unexpected %s for the source in state %d", m.Type, s.state)
 }
 
-// Ready (nguồn) cho biết máy đích đã gửi xong danh sách need.
+// Ready (nguồn) cho biết máy đích đã gửi xong danh sách need và lượt đang ở pha truyền tệp.
 func (s *Session) Ready() (bool, map[string]bool) {
-	if s.role != RoleSource || s.need == nil {
+	if s.role != RoleSource || s.state != stWaitResult || s.need == nil {
 		return false, nil
 	}
 	return true, s.need

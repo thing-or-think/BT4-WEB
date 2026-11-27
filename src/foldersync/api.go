@@ -17,11 +17,14 @@ import (
 type EventKind string
 
 const (
-	EventScanned   EventKind = "scanned"   // đã quét xong thư mục cục bộ
-	EventPlan      EventKind = "plan"      // đích đã có kế hoạch (trước Decide)
-	EventCommitted EventKind = "committed" // đích đã commit xong
-	EventResult    EventKind = "result"    // nguồn nhận được sync-result
-	EventWarning   EventKind = "warning"   // mục bị bỏ qua, staging mồ côi đã dọn...
+	EventScanned      EventKind = "scanned"      // đã quét xong thư mục cục bộ
+	EventPlan         EventKind = "plan"         // đích đã có kế hoạch (trước Decide)
+	EventCommitted    EventKind = "committed"    // đích đã commit xong
+	EventResult       EventKind = "result"       // nguồn nhận được sync-result
+	EventWarning      EventKind = "warning"      // mục bị bỏ qua, staging mồ côi đã dọn...
+	EventRoundStart   EventKind = "round_start"  // bắt đầu một lượt đồng bộ ("round N")
+	EventReconnecting EventKind = "reconnecting" // đang chờ thử kết nối lại trong chế độ watch
+	EventReconnected  EventKind = "reconnected"  // đã kết nối lại thành công trong chế độ watch
 )
 
 // Event là một mốc tiến trình của lượt sync.
@@ -50,10 +53,12 @@ func report(r Reporter, e Event) {
 
 // HostOptions cấu hình máy nguồn (croc sync <dir>).
 type HostOptions struct {
-	Dir      string
-	Filter   FilterSpec
-	Croc     croc.Options // relay, mã, transport...; IsSender và SyncHook do RunSyncHost đặt
-	Reporter Reporter
+	Dir          string
+	Filter       FilterSpec
+	Croc         croc.Options // relay, mã, transport...; IsSender và SyncHook do RunSyncHost đặt
+	Reporter     Reporter
+	Watch        bool         // bật chế độ theo dõi liên tục trên một phiên croc dài
+	WatchOptions WatchOptions // tùy chọn cho Watcher khi Watch=true (giá trị 0 dùng mặc định)
 }
 
 // JoinOptions cấu hình máy đích.
@@ -77,11 +82,16 @@ var hostTest struct {
 	hook      func(*crocHook) croc.SyncHook
 }
 
-// RunSyncHost quét Dir, mở phiên croc với vai trò nguồn và phục vụ một lượt đồng bộ.
-// Trả kết quả máy đích gửi về. Hủy ctx sẽ dừng phiên và mọi goroutine của nó.
+// RunSyncHost quét Dir, mở phiên croc với vai trò nguồn và phục vụ đồng bộ.
+// Khi o.Watch=false, phục vụ một lượt rồi trả kết quả máy đích gửi về.
+// Khi o.Watch=true, giữ phiên mở qua nhiều lượt (tự nối lại khi đứt mạng) cho đến khi
+// hủy ctx (trả nil) hoặc gặp lỗi không thể hồi phục.
 func RunSyncHost(ctx context.Context, o HostOptions) (*Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if o.Watch {
+		return runSyncHostWatch(ctx, o)
 	}
 	dir, err := filepath.Abs(o.Dir)
 	if err != nil {
@@ -217,39 +227,24 @@ func RunSyncJoin(ctx context.Context, o JoinOptions) (*Result, error) {
 	}
 	defer root.Close()
 
-	env := &joinEnv{ctx: ctx, dir: dir, root: root, staging: staging, o: o}
-	session := NewDestSession(env, o.Diff, Hello{})
-	ops := o.Croc
-	ops.IsSender = false
-	ops.ReceiveRoot = staging.Dir()
-	ops.NoPrompt = true
-	ops.Overwrite = true
-	ops.Stdout = false
-	ops.SyncHook = &crocHook{s: session}
-	client, err := newClient(ctx, ops)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.Receive(); err != nil {
-		return session.Result(), err
-	}
-	r := session.Result()
-	if r == nil {
-		return nil, errors.New("foldersync: transfer ended before the sync round finished")
-	}
-	return r, nil
+	return runSyncJoinLoop(ctx, dir, root, staging, o)
 }
 
 type joinEnv struct {
-	ctx     context.Context
-	dir     string
-	root    *receivefs.Root
-	staging *Staging
-	o       JoinOptions
+	ctx      context.Context
+	dir      string
+	root     *receivefs.Root
+	staging  *Staging
+	o        JoinOptions
+	fatalErr error
 }
 
 func (j *joinEnv) ScanDestination(filter FilterSpec) (*Manifest, error) {
-	return ScanDir(j.ctx, j.dir, ScanOptions{Filter: NewFilter(filter)})
+	m, err := ScanDir(j.ctx, j.dir, ScanOptions{Filter: NewFilter(filter)})
+	if err != nil && j.ctx.Err() == nil {
+		j.fatalErr = err
+	}
+	return m, err
 }
 
 func (j *joinEnv) HashDestination(dst *Manifest, paths []string) error {
@@ -261,7 +256,11 @@ func (j *joinEnv) Decide(p *Plan) (Decision, error) {
 	if j.o.Decide == nil {
 		return Decision{Proceed: true}, nil
 	}
-	return j.o.Decide(p)
+	d, err := j.o.Decide(p)
+	if err != nil && j.ctx.Err() == nil {
+		j.fatalErr = err
+	}
+	return d, err
 }
 
 func (j *joinEnv) Commit(p *Plan, _ *Manifest, d Decision) (*Result, error) {

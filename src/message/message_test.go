@@ -151,6 +151,7 @@ func TestSyncMessagesRoundTrip(t *testing.T) {
 	for _, typ := range []Type{
 		TypeSyncHello, TypeSyncManifestStart, TypeSyncManifestBatch, TypeSyncManifestEnd,
 		TypeSyncHashRequest, TypeSyncHashResult, TypeSyncNeed, TypeSyncResult,
+		TypeSyncPing, TypeSyncPong,
 	} {
 		assert.True(t, strings.HasPrefix(string(typ), "sync-"), typ)
 		m := Message{Type: typ, Num: 7, Bytes: []byte(`{"seq":7}`)}

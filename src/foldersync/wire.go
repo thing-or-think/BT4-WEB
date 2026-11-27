@@ -39,10 +39,11 @@ const (
 
 // Hello là bản tin đầu tiên mỗi bên gửi sau khi kênh đã mã hóa.
 type Hello struct {
-	Version int  `json:"version"`
-	Role    Role `json:"role"`
-	Round   int  `json:"round,omitempty"` // Lượt watch (Giai đoạn 4); 0 cho lượt đơn
-	Watch   bool `json:"watch,omitempty"`
+	Version    int    `json:"version"`
+	Role       Role   `json:"role"`
+	Round      int    `json:"round,omitempty"` // Lượt watch (Giai đoạn 4); 0 cho lượt đơn
+	Watch      bool   `json:"watch,omitempty"`
+	RejoinCode string `json:"rejoin_code,omitempty"` // Mã kết nối lại cho phiên watch khi rớt mạng
 }
 
 // ManifestStart mở luồng manifest và khai báo trước kích thước.
