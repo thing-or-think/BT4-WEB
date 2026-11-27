@@ -67,8 +67,15 @@ type JoinOptions struct {
 	Reporter Reporter
 }
 
-// newClient là điểm tạo croc client; test thay để không dùng Tailcat/DERP.
+// newClient là điểm tạo croc client.
 var newClient = croc.NewCtx
+
+// hostTest cho phép test đóng vai nguồn độc hại hoặc tiêm thay đổi giữa các bước.
+var hostTest struct {
+	afterScan func(m *Manifest)
+	env       func(SourceEnv) SourceEnv
+	hook      func(*crocHook) croc.SyncHook
+}
 
 // RunSyncHost quét Dir, mở phiên croc với vai trò nguồn và phục vụ một lượt đồng bộ.
 // Trả kết quả máy đích gửi về. Hủy ctx sẽ dừng phiên và mọi goroutine của nó.
@@ -85,6 +92,9 @@ func RunSyncHost(ctx context.Context, o HostOptions) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if hostTest.afterScan != nil {
+		hostTest.afterScan(m)
+	}
 	report(o.Reporter, Event{Kind: EventScanned, Manifest: m})
 	for _, s := range m.Skipped {
 		if s.Reason != SkipFiltered {
@@ -92,11 +102,18 @@ func RunSyncHost(ctx context.Context, o HostOptions) (*Result, error) {
 		}
 	}
 
-	env := &hostEnv{ctx: ctx, dir: dir, m: m}
+	var env SourceEnv = &hostEnv{ctx: ctx, dir: dir, m: m}
+	if hostTest.env != nil {
+		env = hostTest.env(env)
+	}
 	session := NewSourceSession(m, env, Hello{})
 	ops := o.Croc
 	ops.IsSender = true
-	ops.SyncHook = &crocHook{s: session}
+	var hook croc.SyncHook = &crocHook{s: session}
+	if hostTest.hook != nil {
+		hook = hostTest.hook(&crocHook{s: session})
+	}
+	ops.SyncHook = hook
 	client, err := newClient(ctx, ops)
 	if err != nil {
 		return nil, err

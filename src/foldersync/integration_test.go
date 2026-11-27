@@ -20,6 +20,7 @@ import (
 type testRelay struct {
 	address string
 	ports   []string
+	stop    func() // dừng relay giữa chừng (mô phỏng rớt mạng)
 }
 
 // startRelay chạy relay croc trên loopback (cổng điều khiển + 4 cổng dữ liệu).
@@ -44,7 +45,9 @@ func startRelay(t *testing.T) testRelay {
 	for _, p := range ports[1:] {
 		start(p)
 	}
-	t.Cleanup(func() { cancel(); wg.Wait() })
+	var once sync.Once
+	stop := func() { once.Do(func() { cancel(); wg.Wait() }) }
+	t.Cleanup(stop)
 	deadline := time.Now().Add(5 * time.Second)
 	for _, p := range ports {
 		for {
@@ -59,7 +62,7 @@ func startRelay(t *testing.T) testRelay {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	return testRelay{address: net.JoinHostPort("127.0.0.1", ports[0]), ports: ports}
+	return testRelay{address: net.JoinHostPort("127.0.0.1", ports[0]), ports: ports, stop: stop}
 }
 
 var roomCounter atomic.Int32
