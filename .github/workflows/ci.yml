@@ -194,6 +194,21 @@ jobs:
       - name: Fuzz ZIP parsing and preflight
         run: go test ./src/utils -run '^$' -fuzz '^FuzzZipPreflight$' -fuzztime 10s
 
+      - name: Fuzz folder sync wire path normalization
+        run: go test ./src/foldersync -run '^$' -fuzz '^FuzzNormalizeWirePathFromOS$' -fuzztime 10s
+
+      - name: Fuzz folder sync filter matching
+        run: go test ./src/foldersync -run '^$' -fuzz '^FuzzFilterMatch$' -fuzztime 10s
+
+      - name: Fuzz folder sync diff comparison
+        run: go test ./src/foldersync -run '^$' -fuzz '^FuzzCompare$' -fuzztime 10s
+
+      - name: Fuzz folder sync manifest validation
+        run: go test ./src/foldersync -run '^$' -fuzz '^FuzzValidateManifest$' -fuzztime 10s
+
+      - name: Fuzz folder sync wire decoders
+        run: go test ./src/foldersync -run '^$' -fuzz '^FuzzWireDecoders$' -fuzztime 10s
+
   unit-tests:
     name: Go unit tests
     runs-on: ubuntu-24.04
@@ -228,6 +243,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $COMMON -ldflags "$SMALL" -o croc-linux-amd64
           CGO_ENABLED=0 GOOS=linux GOARCH=386 go build $COMMON -ldflags "$SMALL" -o croc-linux-386
           CGO_ENABLED=0 go test -tags croc_no_tailcat ./src/croc ./src/cli ./src/sshshare ./src/tailcattransport
+          CGO_ENABLED=0 go test -tags croc_no_tailcat ./src/foldersync
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $RELAY_ONLY -ldflags "$SMALL" -o croc-linux-amd64-relay-only
 
       - name: Build exhaustive platform targets
@@ -284,3 +300,100 @@ jobs:
               exit 1
             fi
           done
+
+  folder-sync:
+    name: Folder sync (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test folder sync Go packages
+        run: |
+          go test ./src/foldersync ./src/message ./src/receivefs
+          go test ./src/croc -run 'Sync|ReceiveRoot'
+          go test ./src/cli -run 'Sync'
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci --prefix web
+
+      - name: Test folder sync web client
+        run: npm --prefix web test -- --run src/protocol/sync src/SyncPanel.test.tsx src/protocol/native-interop.test.ts
+
+  folder-sync-race:
+    name: Folder sync race tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Race-test folder sync
+        run: |
+          go test -race ./src/foldersync
+          go test -race ./src/croc -run 'Sync|ReceiveRoot'
+
+  folder-sync-e2e:
+    name: Folder sync E2E
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci --prefix web
+
+      - name: Install browser engines
+        run: npx --prefix web playwright install --with-deps chromium firefox webkit
+
+      - name: Run web sync E2E tests
+        run: npm --prefix web run test:e2e -- --grep 'web sync'
+
+      - name: Upload Playwright failure report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: folder-sync-e2e-report
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            web/.e2e/test-results
+            web/playwright-report
