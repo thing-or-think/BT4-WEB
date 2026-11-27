@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Download, Link, SquareTerminal, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, FolderSync, Link, SquareTerminal, Upload } from "lucide-react";
 
-export type Task = "home" | "send" | "store" | "receive" | "ssh";
+export type Task = "home" | "send" | "store" | "receive" | "ssh" | "sync";
 
 const taskLabels: Record<Exclude<Task, "home">, string> = {
   send: "Send files",
   store: "Store files",
   receive: "Receive files",
   ssh: "Join SSH",
+  sync: "Sync folders",
 };
 
 export function taskFromHash(hash = window.location.hash): Task {
@@ -21,6 +22,8 @@ export function taskFromHash(hash = window.location.hash): Task {
       return "receive";
     case "#ssh":
       return "ssh";
+    case "#sync":
+      return "sync";
     default:
       return "home";
   }
@@ -110,6 +113,7 @@ export function TaskSwitcher({
     ...(storeEnabled ? [{ task: "store" as const, icon: Link }] : []),
     { task: "receive", icon: Download },
     { task: "ssh", icon: SquareTerminal },
+    { task: "sync", icon: FolderSync },
   ] as const;
 
   return (
@@ -142,6 +146,7 @@ export function TaskLauncher({
     ...(storeEnabled ? [{ task: "store" as const, icon: Link, description: "Share an encrypted link. Download later." }] : []),
     { task: "receive", icon: Download, description: "Open a croc code or encrypted link." },
     { task: "ssh", icon: SquareTerminal, description: "Join a shared terminal with an invitation." },
+    { task: "sync", icon: FolderSync, description: "Mirror a folder. Only changed files are sent." },
   ] as const;
   return (
     <section className="task-launcher" aria-labelledby="task-launcher-title">

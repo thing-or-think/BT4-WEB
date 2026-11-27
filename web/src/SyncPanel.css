@@ -1,0 +1,345 @@
+.sync-workspace {
+  width: 100%;
+  margin-right: auto;
+  margin-left: auto;
+  border-top: 1px solid var(--foreground);
+  border-left: 1px solid var(--foreground);
+}
+
+.sync-panel {
+  gap: 18px;
+  min-height: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.sync-panel .panel-heading {
+  margin-bottom: 0;
+}
+
+.sync-panel code {
+  color: var(--foreground);
+}
+
+.sync-panel fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sync-panel legend,
+.sync-folder-label,
+.sync-field label,
+.sync-plan h3,
+.sync-errors h3,
+.sync-watch-log h3 {
+  margin: 0 0 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sync-mode {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.sync-mode legend {
+  grid-column: 1 / -1;
+}
+
+.sync-mode label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--soft-border);
+  cursor: pointer;
+}
+
+.sync-mode label.selected {
+  border-color: var(--foreground);
+  background: var(--panel-tint);
+}
+
+.sync-mode label span {
+  display: grid;
+  gap: 2px;
+}
+
+.sync-mode small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sync-folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sync-folder {
+  display: grid;
+  gap: 6px;
+}
+
+.sync-folder-name {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.sync-folder-name svg,
+.sync-badge svg,
+.sync-dry-run svg,
+.sync-confirm svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.sync-field {
+  display: grid;
+  gap: 4px;
+}
+
+.sync-field input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--soft-border);
+  padding: 8px 10px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  font-size: 16px;
+}
+
+.sync-field input:focus {
+  border-color: var(--foreground);
+  outline: none;
+}
+
+.sync-options {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-options > label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  cursor: pointer;
+}
+
+.sync-options code {
+  color: var(--subtle);
+}
+
+.sync-notice,
+.sync-unsupported {
+  margin: 0;
+}
+
+.sync-code {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--foreground);
+}
+
+.sync-code code {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.sync-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sync-confirm {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 2px solid var(--foreground);
+}
+
+.sync-confirm p {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  font-weight: 650;
+}
+
+.sync-confirm-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.sync-confirm-actions .primary-button {
+  margin-top: 0;
+}
+
+.sync-plan {
+  display: grid;
+  gap: 10px;
+}
+
+.sync-plan-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sync-plan-heading h3 {
+  margin: 0;
+}
+
+.sync-dry-run {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px dashed var(--foreground);
+}
+
+.sync-plan-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sync-plan-counts li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--soft-border);
+}
+
+.sync-plan-counts strong {
+  font-size: 18px;
+}
+
+.sync-badge {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 96px;
+  font-weight: 650;
+}
+
+/* Kinds differ by icon, label and line style, not only by colour. */
+.sync-badge.add {
+  color: var(--foreground);
+}
+
+.sync-badge.update {
+  color: var(--foreground);
+  font-style: italic;
+}
+
+.sync-badge.delete {
+  color: var(--foreground);
+  text-decoration: line-through;
+}
+
+.sync-badge.skip {
+  color: var(--muted);
+}
+
+.sync-plan-counts li[data-kind="delete"] {
+  border-style: dashed;
+  border-color: var(--foreground);
+}
+
+.sync-bytes,
+.sync-empty,
+.sync-more {
+  margin: 0;
+  color: var(--muted);
+}
+
+.sync-plan-list,
+.sync-errors ul,
+.sync-watch-log ol {
+  display: grid;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--soft-border);
+  list-style: none;
+}
+
+.sync-plan-list li,
+.sync-errors li,
+.sync-watch-log li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--soft-border);
+}
+
+.sync-plan-list li:last-child,
+.sync-errors li:last-child,
+.sync-watch-log li:last-child {
+  border-bottom: 0;
+}
+
+.sync-plan-list li[data-kind="delete"] .sync-path {
+  text-decoration: line-through;
+}
+
+.sync-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-size,
+.sync-watch-log time {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sync-errors li {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+}
+
+.sync-event-kind {
+  min-width: 56px;
+  font-weight: 650;
+}
+
+.sync-summary {
+  margin: 0;
+}
+
+.sync-actions {
+  margin-top: auto;
+}
+
+.sync-actions .primary-button {
+  margin-top: 0;
+}
