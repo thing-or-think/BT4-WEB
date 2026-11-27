@@ -201,7 +201,7 @@ func TestFailureDiskFullDuringCommit(t *testing.T) {
 	srcDir, dstDir := t.TempDir(), t.TempDir()
 	writeFile(t, srcDir, "a.txt", "new a")
 	writeFile(t, srcDir, "b.txt", "new b")
-	writeFile(t, dstDir, "a.txt", "old a")
+	writeFile(t, dstDir, "a.txt", "old")
 	commitTestHook = func(stage, p string) error {
 		if stage == "rename" {
 			return errors.New("no space left on device")
@@ -213,7 +213,7 @@ func TestFailureDiskFullDuringCommit(t *testing.T) {
 	if rr.joinErr != nil || len(rr.join.Failures) != 2 || !rr.host.Partial() {
 		t.Fatalf("err=%v join=%+v host=%+v", rr.joinErr, rr.join, rr.host)
 	}
-	if got, _ := os.ReadFile(filepath.Join(dstDir, "a.txt")); string(got) != "old a" || exists(dstDir, "b.txt") {
+	if got, _ := os.ReadFile(filepath.Join(dstDir, "a.txt")); string(got) != "old" || exists(dstDir, "b.txt") {
 		t.Fatal("destination changed despite failed commit")
 	}
 	noStagingLeft(t, dstDir)

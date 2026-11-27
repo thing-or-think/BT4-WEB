@@ -285,6 +285,66 @@ func TestCompareDeleteProtection(t *testing.T) {
 	}
 }
 
+// TestCompareDeleteProtectionCaseAndNorm kiểm tra protectedRoots so khớp không phân biệt
+// hoa/thường và chuẩn hóa NFC/NFD để không xóa mục đích trùng khóa với mục nguồn bị bỏ qua.
+func TestCompareDeleteProtectionCaseAndNorm(t *testing.T) {
+	src := man(fe("keep1", 1, 0, ""), fe("keep2", 1, 0, ""), fe("keep3", 1, 0, ""))
+	src.Skipped = []SkippedPath{
+		{Path: "Data", Reason: SkipSymlink},
+		{Path: "Caf\u00e9", Reason: SkipFiltered}, // NFC
+	}
+	dst := man(
+		fe("keep1", 1, 0, ""), fe("keep2", 1, 0, ""), fe("keep3", 1, 0, ""),
+		de("data"), fe("data/important.db", 1, 0, ""),
+		de("cafe\u0301"), fe("cafe\u0301/menu.txt", 1, 0, ""), // NFD + khác hoa/thường
+		fe("extra.txt", 1, 0, ""),
+	)
+	plan, _, err := Compare(src, dst, DiffOptions{Delete: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.DeleteBlockedReason != "" {
+		t.Fatalf("unexpected block: %s", plan.DeleteBlockedReason)
+	}
+	var deleted []string
+	for _, c := range plan.Delete {
+		deleted = append(deleted, c.Path)
+	}
+	want := []string{"extra.txt"}
+	if !slices.Equal(deleted, want) {
+		t.Fatalf("deletes = %q, want %q", deleted, want)
+	}
+}
+
+// TestCompareTypeChangeConflictWithInvalidNameChild kiểm tra thay thư mục đích bằng tệp
+// nguồn phải trở thành xung đột khi thư mục đích chứa mục SkipInvalidName (chỉ có DiskPath).
+func TestCompareTypeChangeConflictWithInvalidNameChild(t *testing.T) {
+	tests := []struct {
+		name     string
+		diskPath string
+	}{
+		{name: "direct child", diskPath: filepath.Join("x", "CON")},
+		{name: "nested child", diskPath: filepath.Join("x", "sub", "CON")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := man(fe("x", 1, 0, ""), fe("keep1", 1, 0, ""), fe("keep2", 1, 0, ""))
+			dst := man(de("x"), fe("keep1", 1, 0, ""), fe("keep2", 1, 0, ""))
+			dst.Skipped = []SkippedPath{
+				{DiskPath: tt.diskPath, Reason: SkipInvalidName},
+			}
+			plan, _, err := Compare(src, dst, DiffOptions{Delete: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{"x": "conflict", "keep1": "skip", "keep2": "skip"}
+			if got := categorize(plan); !maps.Equal(got, want) {
+				t.Fatalf("plan = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestCompareErrors(t *testing.T) {
 	bad := &Manifest{Entries: []Entry{fe("../x", 1, 0, "")}, Complete: true}
 	if _, _, err := Compare(bad, man(), DiffOptions{}); err == nil {

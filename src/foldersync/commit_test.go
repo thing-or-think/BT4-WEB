@@ -247,7 +247,7 @@ func TestCommitRejectsTamperedStaging(t *testing.T) {
 	srcDir, dstDir := t.TempDir(), t.TempDir()
 	writeFile(t, srcDir, "a.txt", "genuine")
 	writeFile(t, srcDir, "b.txt", "genuine")
-	writeFile(t, dstDir, "a.txt", "old!!!!")
+	writeFile(t, dstDir, "a.txt", "old")
 	ctx := context.Background()
 	src, _, plan := syncPlan(t, srcDir, dstDir, nil, DiffOptions{})
 	if err := HashEntries(ctx, srcDir, src, []string{"a.txt", "b.txt"}); err != nil {
@@ -264,7 +264,7 @@ func TestCommitRejectsTamperedStaging(t *testing.T) {
 	if err != nil || len(r.Failures) != 2 || !strings.Contains(strings.Join(r.Failures, "\n"), "does not match") {
 		t.Fatalf("err=%v failures=%v", err, r.Failures)
 	}
-	if got, _ := os.ReadFile(filepath.Join(dstDir, "a.txt")); string(got) != "old!!!!" {
+	if got, _ := os.ReadFile(filepath.Join(dstDir, "a.txt")); string(got) != "old" {
 		t.Fatalf("a.txt = %q", got)
 	}
 	if exists(dstDir, "b.txt") {

@@ -205,7 +205,7 @@ func deleteCandidates(src, dst *Manifest, matched map[string]bool) []Change {
 	protectedRoots := make(map[string]bool)
 	for _, s := range src.Skipped {
 		if s.Path != "" {
-			protectedRoots[s.Path] = true
+			protectedRoots[PathKey(s.Path)] = true
 		}
 	}
 	keepAncestors := make(map[string]bool)
@@ -230,7 +230,7 @@ func deleteCandidates(src, dst *Manifest, matched map[string]bool) []Change {
 
 	isProtected := func(p string) bool {
 		for cur := p; cur != "." && cur != "/"; cur = path.Dir(cur) {
-			if protectedRoots[cur] {
+			if protectedRoots[PathKey(cur)] {
 				return true
 			}
 		}
@@ -278,7 +278,8 @@ func resolveTypeChanges(p *Plan, dst *Manifest, idx []int) {
 	}
 	conflict := make(map[int]bool)
 	for _, i := range idx {
-		dir := p.Update[i].Dst.Path + "/"
+		dstDir := p.Update[i].Dst.Path
+		dir := dstDir + "/"
 		for _, d := range dst.Entries {
 			if strings.HasPrefix(d.Path, dir) && !deleting[d.Path] {
 				conflict[i] = true
@@ -286,10 +287,20 @@ func resolveTypeChanges(p *Plan, dst *Manifest, idx []int) {
 			}
 		}
 		if !conflict[i] {
-			// Cây con chỉ còn dựa vào Delete: không được có cảnh báo chặn xóa ẩn.
+			// Cây con chỉ còn dựa vào Delete: không được có cảnh báo chặn xóa ẩn
+			// (kể cả mục SkipInvalidName có Path rỗng nhưng DiskPath nằm dưới dstDir).
 			for _, s := range dst.Skipped {
-				if s.Path != "" && strings.HasPrefix(s.Path, dir) {
-					conflict[i] = true
+				switch {
+				case s.Path != "":
+					if strings.HasPrefix(s.Path, dir) {
+						conflict[i] = true
+					}
+				case s.DiskPath != "":
+					if parent, err := NormalizeWirePathFromOS(filepath.Dir(s.DiskPath)); err == nil && (parent == dstDir || strings.HasPrefix(parent, dir)) {
+						conflict[i] = true
+					}
+				}
+				if conflict[i] {
 					break
 				}
 			}
