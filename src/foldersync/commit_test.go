@@ -389,3 +389,176 @@ func TestCommitWindowsLockedAndReadOnlyTargets(t *testing.T) {
 		t.Fatalf("locked.txt changed while held: %q", got)
 	}
 }
+
+// TestCommitHoldsDeletesOnFailedCommit kiểm tra khi một tệp commit thất bại ở bước rename,
+// mọi thao tác xóa đều bị giữ lại và các tệp thừa ở đích vẫn còn nguyên.
+func TestCommitHoldsDeletesOnFailedCommit(t *testing.T) {
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+	for _, n := range []string{"keep1.txt", "keep2.txt", "keep3.txt"} {
+		writeFile(t, srcDir, n, "same "+n)
+		writeFile(t, dstDir, n, "same "+n)
+	}
+	writeFile(t, srcDir, "fail.txt", "new fail content")
+	writeFile(t, dstDir, "fail.txt", "old fail")
+	writeFile(t, srcDir, "ok.txt", "new ok content")
+	writeFile(t, dstDir, "ok.txt", "old ok")
+	writeFile(t, dstDir, "extra/stale.txt", "stale")
+	writeFile(t, dstDir, "orphan.txt", "orphan")
+
+	commitTestHook = func(stage, p string) error {
+		if stage == "rename" && p == "fail.txt" {
+			return errors.New("injected rename failure")
+		}
+		return nil
+	}
+	t.Cleanup(func() { commitTestHook = nil })
+
+	run := syncOnce(t, srcDir, dstDir, DiffOptions{Delete: true}, proceed)
+	commitTestHook = nil
+	if run.err != nil {
+		t.Fatalf("unexpected error: %v", run.err)
+	}
+	if !run.result.Partial() {
+		t.Fatalf("expected partial result, got %+v", run.result)
+	}
+	if run.result.Deleted != 0 || run.result.DeletesHeld != 3 || run.result.DeleteBlocked == "" {
+		t.Fatalf("expected deletes held, got %+v", run.result)
+	}
+	for _, n := range []string{"extra/stale.txt", "extra", "orphan.txt"} {
+		if !exists(dstDir, n) {
+			t.Fatalf("%s was deleted despite commit failure", n)
+		}
+	}
+	if got, _ := os.ReadFile(filepath.Join(dstDir, "fail.txt")); string(got) != "old fail" {
+		t.Fatalf("fail.txt = %q, want old content", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dstDir, "ok.txt")); string(got) != "new ok content" {
+		t.Fatalf("ok.txt = %q, want updated content", got)
+	}
+
+	// Chạy lại lượt sạch: mọi thay đổi và xóa hội tụ.
+	clean := syncOnce(t, srcDir, dstDir, DiffOptions{Delete: true}, proceed)
+	if clean.err != nil || clean.result.Partial() {
+		t.Fatalf("clean rerun: err=%v failures=%v", clean.err, clean.result.Failures)
+	}
+	assertSameTree(t, srcDir, dstDir)
+}
+
+// TestCommitDirToFileAbortsWhenNewFileAppearsAfterScan kiểm tra khi có tệp mới xuất hiện
+// trong thư mục đích sau lúc quét, thao tác thay thư mục bằng tệp phải thất bại và không
+// xóa bất kỳ mục nào bên trong thư mục đó.
+func TestCommitDirToFileAbortsWhenNewFileAppearsAfterScan(t *testing.T) {
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+	for _, n := range []string{"k1.txt", "k2.txt", "k3.txt", "k4.txt"} {
+		writeFile(t, srcDir, n, "same "+n)
+		writeFile(t, dstDir, n, "same "+n)
+	}
+	writeFile(t, srcDir, "wasdir", "now a regular file")
+	writeFile(t, dstDir, "wasdir/old.txt", "old child")
+	writeFile(t, dstDir, "wasdir/sub/nested.txt", "nested child")
+
+	ctx := context.Background()
+	src, _, plan := syncPlan(t, srcDir, dstDir, nil, DiffOptions{Delete: true})
+	var missing []string
+	for _, ch := range transferChanges(plan) {
+		if len(ch.Src.Hash) == 0 {
+			missing = append(missing, ch.Path)
+		}
+	}
+	if err := HashEntries(ctx, srcDir, src, missing); err != nil {
+		t.Fatal(err)
+	}
+	staging, err := NewStaging(dstDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer staging.Remove()
+	receiveInto(t, srcDir, staging, plan)
+
+	// Tạo tệp mới dưới thư mục đích sau khi đã quét xong.
+	writeFile(t, dstDir, "wasdir/sub/new-after-scan.txt", "must survive")
+
+	r, err := Commit(ctx, openRoot(t, dstDir), plan, CommitOptions{Staging: staging.Name, Decision: proceed})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !r.Partial() || r.Deleted != 0 || r.DeletesHeld != 3 || r.DeleteBlocked == "" {
+		t.Fatalf("expected failure without deletion, got %+v", r)
+	}
+	info, err := os.Lstat(filepath.Join(dstDir, "wasdir"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("wasdir must remain a directory, info=%v err=%v", info, err)
+	}
+	for _, n := range []string{"wasdir/old.txt", "wasdir/sub/nested.txt", "wasdir/sub/new-after-scan.txt"} {
+		if !exists(dstDir, n) {
+			t.Fatalf("%s must not be deleted", n)
+		}
+	}
+}
+
+// TestCommitCaseOnlyDirRenameWithFileUpdate kiểm tra đổi tên thư mục chỉ khác hoa/thường
+// kèm cập nhật tệp bên trong hội tụ ngay ở lượt đầu tiên.
+func TestCommitCaseOnlyDirRenameWithFileUpdate(t *testing.T) {
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+	oldTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	for _, n := range []string{"k1.txt", "k2.txt", "k3.txt"} {
+		writeFile(t, srcDir, n, "same "+n)
+		writeFile(t, dstDir, n, "same "+n)
+	}
+	writeFile(t, srcDir, "Docs/keep.txt", "unchanged")
+	writeFile(t, dstDir, "docs/keep.txt", "unchanged")
+	writeFile(t, srcDir, "Docs/Sub/app.txt", "updated content inside renamed dir")
+	writeFile(t, dstDir, "docs/sub/app.txt", "old")
+	writeFile(t, srcDir, "Docs/new.txt", "brand new")
+	writeFile(t, dstDir, "docs/old.txt", "stale")
+
+	for _, p := range []string{
+		filepath.Join(srcDir, "k1.txt"),
+		filepath.Join(dstDir, "k1.txt"),
+		filepath.Join(srcDir, "k2.txt"),
+		filepath.Join(dstDir, "k2.txt"),
+		filepath.Join(srcDir, "k3.txt"),
+		filepath.Join(dstDir, "k3.txt"),
+		filepath.Join(srcDir, "Docs", "keep.txt"),
+		filepath.Join(dstDir, "docs", "keep.txt"),
+	} {
+		_ = os.Chtimes(p, oldTime, oldTime)
+	}
+
+	run := syncOnce(t, srcDir, dstDir, DiffOptions{Delete: true}, proceed)
+	if run.err != nil || run.result.Partial() {
+		t.Fatalf("err=%v failures=%v", run.err, run.result.Failures)
+	}
+	assertSameTree(t, srcDir, dstDir)
+
+	// Xác nhận tên thư mục trên đĩa khớp đúng chữ hoa/thường của nguồn.
+	entries, err := os.ReadDir(dstDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if !slices.Contains(names, "Docs") || slices.Contains(names, "docs") {
+		t.Fatalf("top-level dir case rename not applied: %v", names)
+	}
+	subEntries, err := os.ReadDir(filepath.Join(dstDir, "Docs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subNames []string
+	for _, e := range subEntries {
+		subNames = append(subNames, e.Name())
+	}
+	if !slices.Contains(subNames, "Sub") || slices.Contains(subNames, "sub") {
+		t.Fatalf("nested dir case rename not applied: %v", subNames)
+	}
+
+	// Lượt thứ 2 phải không còn thay đổi nào.
+	again := syncOnce(t, srcDir, dstDir, DiffOptions{Delete: true}, proceed)
+	if again.plan.HasChanges() {
+		t.Fatalf("second round not idle: %+v", categorize(again.plan))
+	}
+}
