@@ -724,6 +724,11 @@ func (c *Client) canRetryTransfer(err error, attempt int) bool {
 	if attempt >= maxReconnectAttempts {
 		return false
 	}
+	if c.Options.SyncHook != nil {
+		// A sync round is not resumable yet: the hook's state would have to be
+		// replayed. Fail the round; running sync again converges.
+		return false
+	}
 	if c.peerReconnectVersion < ReconnectVersion || c.reconnectVersion < ReconnectVersion {
 		return false
 	}
@@ -2657,6 +2662,9 @@ func (c *Client) processSenderInfo(senderInfo SenderInfo) (done bool, err error)
 	if err != nil {
 		return true, err
 	}
+	if err = c.guardSyncReceive(senderInfo.SendingText); err != nil {
+		return true, err
+	}
 	for i, fi := range c.FilesToTransfer {
 		c.FilesToTransfer[i].declined = declined[path.Join(fi.FolderRemote, fi.Name)]
 	}
@@ -2795,6 +2803,9 @@ func (c *Client) processSenderInfo(senderInfo SenderInfo) (done bool, err error)
 
 	// if no files are to be transferred, then we can end the file transfer process
 	if c.FilesToTransfer == nil {
+		if err = c.syncBeforeFinish(); err != nil {
+			return true, err
+		}
 		c.updateLifecycle(func(state *transferLifecycle) {
 			state.Successful = true
 			state.RecipientRequested = true
@@ -3409,6 +3420,9 @@ func (c *Client) recipientGetFileReady(finished bool) (err error) {
 	if finished {
 		// TODO: do the last finishing stuff
 		log.Debug("finished")
+		if err = c.syncBeforeFinish(); err != nil {
+			return
+		}
 		err = message.Send(c.connection(0), c.Key, message.Message{
 			Type: message.TypeFinished,
 		})

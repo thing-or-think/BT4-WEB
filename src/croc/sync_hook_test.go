@@ -269,3 +269,126 @@ func errString(err error) string {
 	}
 	return err.Error()
 }
+
+// guardedSpikeHook adds the optional receiver interfaces to the spike hook.
+type guardedSpikeHook struct {
+	*spikeSyncHook
+	reject      string // path to reject in AllowReceive
+	offered     []string
+	finishCalls int
+	gotResult   bool // sender: saw sync-result
+}
+
+func (h *guardedSpikeHook) AllowReceive(p string, size int64, isDir bool) error {
+	h.offered = append(h.offered, p)
+	if p == h.reject || isDir {
+		return errors.New("not requested: " + p)
+	}
+	return nil
+}
+
+func (h *guardedSpikeHook) BeforeFinish(send func(message.Message) error) error {
+	h.finishCalls++
+	return send(message.Message{Type: message.TypeSyncResult, Bytes: []byte(`{}`)})
+}
+
+func (h *guardedSpikeHook) Handle(m message.Message, send func(message.Message) error) error {
+	if m.Type == message.TypeSyncResult {
+		h.gotResult = true
+		return nil
+	}
+	return h.spikeSyncHook.Handle(m, send)
+}
+
+func runGuardedSync(t *testing.T, payload, root string, sender, receiver *guardedSpikeHook) spikeRun {
+	t.Helper()
+	relay := startTestRelay(t, 4)
+	senderOps := receiveRootTestOptions(relay, "8302-sync-guard", true, "")
+	receiverOps := receiveRootTestOptions(relay, "8302-sync-guard", false, root)
+	senderOps.SyncHook, receiverOps.SyncHook = sender, receiver
+	s, err := newTestClient(senderOps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := newTestClient(receiverOps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, empty, folders, err := GetFilesInfo([]string{payload}, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		sender.names = append(sender.names, path.Join(f.FolderRemote, f.Name))
+	}
+	run := spikeRun{sender: s, receiver: r}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); run.sendErr = s.Send(files, empty, folders) }()
+	go func() { defer wg.Done(); time.Sleep(100 * time.Millisecond); run.receiveErr = r.Receive() }()
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		cancelClients(s, r)
+		<-done
+		t.Fatal("transfer hung")
+	}
+	return run
+}
+
+func TestSyncHookFinisherRunsBeforeFinished(t *testing.T) {
+	for _, preexisting := range []bool{false, true} {
+		name := "with files"
+		if preexisting {
+			name = "nothing to send"
+		}
+		t.Run(name, func(t *testing.T) {
+			source := t.TempDir()
+			payload := filepath.Join(source, "payload")
+			writeReceiveRootFixture(t, payload)
+			root := t.TempDir()
+			if preexisting {
+				if err := os.CopyFS(filepath.Join(root, "payload"), os.DirFS(payload)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sender := &guardedSpikeHook{spikeSyncHook: &spikeSyncHook{sender: true}}
+			receiver := &guardedSpikeHook{spikeSyncHook: &spikeSyncHook{root: root}}
+			run := runGuardedSync(t, payload, root, sender, receiver)
+			if run.sendErr != nil || run.receiveErr != nil {
+				t.Fatalf("send=%v receive=%v", run.sendErr, run.receiveErr)
+			}
+			if receiver.finishCalls != 1 || !sender.gotResult {
+				t.Fatalf("finish calls=%d sender saw result=%v", receiver.finishCalls, sender.gotResult)
+			}
+			if !preexisting && len(receiver.offered) == 0 {
+				t.Fatal("guard was not consulted")
+			}
+		})
+	}
+}
+
+func TestSyncHookGuardRejectsUnrequestedFile(t *testing.T) {
+	source := t.TempDir()
+	payload := filepath.Join(source, "payload")
+	writeReceiveRootFixture(t, payload)
+	root := t.TempDir()
+	sender := &guardedSpikeHook{spikeSyncHook: &spikeSyncHook{sender: true}}
+	receiver := &guardedSpikeHook{spikeSyncHook: &spikeSyncHook{root: root}, reject: "payload/large.bin"}
+	run := runGuardedSync(t, payload, root, sender, receiver)
+	if run.receiveErr == nil || !strings.Contains(run.receiveErr.Error(), "not requested") {
+		t.Fatalf("receive error = %v", run.receiveErr)
+	}
+	if run.sendErr == nil {
+		t.Fatal("sender must fail too, not hang")
+	}
+	if receiver.finishCalls != 0 {
+		t.Fatal("finisher ran after a rejected offer")
+	}
+	entries, _ := os.ReadDir(root)
+	if len(entries) != 0 {
+		t.Fatalf("files written despite rejection: %v", entries)
+	}
+}

@@ -3,6 +3,7 @@ package croc
 import (
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/schollz/croc/v11/src/message"
@@ -31,6 +32,20 @@ type SyncHook interface {
 	Ready() (ready bool, keep func(FileInfo) bool)
 }
 
+// SyncFinisher is optionally implemented by a receiver's SyncHook. Croc calls
+// BeforeFinish after every requested file has been written and before it sends
+// "finished", so the hook can commit and report a result to the sender.
+type SyncFinisher interface {
+	BeforeFinish(send func(message.Message) error) error
+}
+
+// SyncReceiveGuard is optionally implemented by a receiver's SyncHook. Croc
+// calls it for every offered file and empty folder after metadata validation
+// and before anything is written; an error aborts the transfer.
+type SyncReceiveGuard interface {
+	AllowReceive(path string, size int64, isDir bool) error
+}
+
 // ErrPeerLacksSync reports a peer that did not negotiate the hook's feature.
 var ErrPeerLacksSync = errors.New("peer does not support folder sync")
 
@@ -38,6 +53,7 @@ type syncHookState struct {
 	peerFeature bool
 	started     bool
 	planned     bool
+	finished    bool
 	// files receives the sender's selected list exactly once.
 	files chan syncSelection
 }
@@ -109,4 +125,47 @@ func filterFileInfos(infos []FileInfo, keep func(FileInfo) bool) []FileInfo {
 		}
 	}
 	return kept
+}
+
+// guardSyncReceive lets the hook reject offered files it did not request.
+func (c *Client) guardSyncReceive(sendingText bool) error {
+	hook := c.Options.SyncHook
+	if hook == nil || c.Options.IsSender {
+		return nil
+	}
+	if sendingText {
+		return errors.New("folder sync peer offered text instead of files")
+	}
+	guard, ok := hook.(SyncReceiveGuard)
+	if !ok {
+		return nil
+	}
+	for _, fi := range c.FilesToTransfer {
+		if fi.Symlink != "" {
+			return fmt.Errorf("folder sync peer offered symlink %q", path.Join(fi.FolderRemote, fi.Name))
+		}
+		if err := guard.AllowReceive(path.Join(fi.FolderRemote, fi.Name), fi.Size, false); err != nil {
+			return err
+		}
+	}
+	for _, folder := range c.EmptyFoldersToTransfer {
+		if err := guard.AllowReceive(path.Clean(folder.FolderRemote), 0, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncBeforeFinish runs the receiver hook's finishing step, once.
+func (c *Client) syncBeforeFinish() error {
+	hook := c.Options.SyncHook
+	if hook == nil || c.Options.IsSender || c.sync.finished {
+		return nil
+	}
+	finisher, ok := hook.(SyncFinisher)
+	if !ok {
+		return nil
+	}
+	c.sync.finished = true
+	return finisher.BeforeFinish(c.syncSend)
 }
