@@ -29,6 +29,7 @@ type syncDecideOptions struct {
 	DryRun     bool
 	Yes        bool
 	Quiet      bool
+	Watch      bool
 	IsTerminal bool
 	In         io.Reader
 	Out        io.Writer
@@ -100,6 +101,15 @@ func decideSync(plan *foldersync.Plan, o syncDecideOptions) (foldersync.Decision
 		}
 		fmt.Fprintln(out, "Nothing was changed.")
 		return foldersync.Decision{}, nil
+	}
+
+	if o.Watch {
+		// Mark confirmation required so Commit holds deletions while applying other changes.
+		plan.RequireDeleteConfirm = true
+		if !o.Quiet {
+			fmt.Fprintln(out, "Deletions held: rerun with --yes to allow deletes in watch mode.")
+		}
+		return foldersync.Decision{Proceed: true, ConfirmDeletes: false}, nil
 	}
 
 	return foldersync.Decision{}, fmt.Errorf("refusing to delete %d item(s) without --yes: stdin is not a terminal", len(plan.Delete))

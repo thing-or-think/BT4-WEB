@@ -182,6 +182,23 @@ func TestDecideSync(t *testing.T) {
 			wantPrefix: "\r\nPlan: ",
 		},
 		{
+			name:         "watch mode deletes without terminal and without --yes holds deletes",
+			plan:         deletePlan(),
+			opts:         syncDecideOptions{Watch: true, IsTerminal: false, Yes: false},
+			forbidRead:   true,
+			wantDecision: foldersync.Decision{Proceed: true, ConfirmDeletes: false},
+			wantPrefix:   "\r\nPlan: ",
+			wantOutSubs:  []string{"Deletions held: rerun with --yes to allow deletes in watch mode."},
+		},
+		{
+			name:         "watch mode deletes without terminal and without --yes is silent when quiet",
+			plan:         deletePlan(),
+			opts:         syncDecideOptions{Watch: true, Quiet: true, IsTerminal: false, Yes: false},
+			forbidRead:   true,
+			wantDecision: foldersync.Decision{Proceed: true, ConfirmDeletes: false},
+			wantEmpty:    true,
+		},
+		{
 			name:         "over 50% deletes with --yes and terminal typing yes confirms deletes",
 			plan:         confirmDeletePlan(),
 			opts:         syncDecideOptions{Yes: true, IsTerminal: true},
@@ -329,6 +346,26 @@ func TestFormatSyncPlanFormattingAndTruncation(t *testing.T) {
 		require.Contains(t, out, "  ~ u19.txt\n")
 		require.Equal(t, 1, strings.Count(out, "... and "))
 	})
+}
+
+func TestDecideSyncWatchMarksDeleteConfirm(t *testing.T) {
+	var out bytes.Buffer
+	plan := &foldersync.Plan{
+		Add:    []foldersync.Change{{Path: "a.txt", Src: fileEntry("a.txt", 10)}},
+		Delete: []foldersync.Change{{Path: "old.txt", Dst: fileEntry("old.txt", 1)}},
+	}
+
+	got, err := decideSync(plan, syncDecideOptions{
+		Watch:      true,
+		IsTerminal: false,
+		Yes:        false,
+		In:         failReader{},
+		Out:        &out,
+	})
+	require.NoError(t, err)
+	require.Equal(t, foldersync.Decision{Proceed: true, ConfirmDeletes: false}, got)
+	require.True(t, plan.RequireDeleteConfirm)
+	require.Contains(t, out.String(), "Deletions held: rerun with --yes to allow deletes in watch mode.")
 }
 
 func TestDecideSyncCanceledContext(t *testing.T) {

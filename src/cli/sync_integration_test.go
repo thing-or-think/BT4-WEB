@@ -317,3 +317,249 @@ func TestCLISyncIntegration(t *testing.T) {
 		require.Equal(t, snapshotSyncTree(t, srcDir), snapshotSyncTree(t, dstDir))
 	})
 }
+
+func TestCLISyncWatchIntegration(t *testing.T) {
+	relayAddr := startCLITestRelay(t)
+
+	cfgDir := t.TempDir()
+	t.Setenv("CROC_CONFIG_DIR", cfgDir)
+	require.NoError(t, os.WriteFile(filepath.Join(cfgDir, "classic_enabled"), []byte("enabled"), 0o600))
+	unsetEnv(t, "CROC_SECRET")
+
+	origIsTerm := syncStdinIsTerminal
+	syncStdinIsTerminal = func() bool { return false }
+	t.Cleanup(func() { syncStdinIsTerminal = origIsTerm })
+
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+	writeSyncTestFile(t, srcDir, "hello.txt", "initial watch content\n")
+
+	overallCtx, overallCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer overallCancel()
+	srcCtx, srcCancel := context.WithCancel(overallCtx)
+	defer srcCancel()
+	dstCtx, dstCancel := context.WithCancel(overallCtx)
+	defer dstCancel()
+
+	rPipe, wPipe, err := os.Pipe()
+	require.NoError(t, err)
+	origStderr := os.Stderr
+	os.Stderr = wPipe
+	var stderrBuf bytes.Buffer
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+		_, _ = io.Copy(&stderrBuf, rPipe)
+	}()
+	restoreStderr := func() {
+		if os.Stderr == wPipe {
+			os.Stderr = origStderr
+			_ = wPipe.Close()
+			<-stderrDone
+			_ = rPipe.Close()
+		}
+	}
+	defer restoreStderr()
+
+	hostEntered := make(chan struct{})
+	destEntered := make(chan struct{})
+	hostRound1Done := make(chan struct{})
+	joinRound1Done := make(chan struct{})
+	var hostOnce, destOnce, hostRound1Once, joinRound1Once sync.Once
+	var destReachedJoin atomic.Bool
+	var joinCommitted atomic.Int64
+
+	origHost, origJoin := runSyncHost, runSyncJoin
+	defer func() {
+		runSyncHost = origHost
+		runSyncJoin = origJoin
+	}()
+
+	runSyncHost = func(runCtx context.Context, o foldersync.HostOptions) (*foldersync.Result, error) {
+		origRep := o.Reporter
+		o.Reporter = foldersync.ReporterFunc(func(e foldersync.Event) {
+			if origRep != nil {
+				origRep.Report(e)
+			}
+			if e.Kind == foldersync.EventResult && e.Result != nil {
+				hostRound1Once.Do(func() { close(hostRound1Done) })
+			}
+		})
+		hostOnce.Do(func() { close(hostEntered) })
+		select {
+		case <-destEntered:
+		case <-runCtx.Done():
+			return nil, runCtx.Err()
+		}
+		return origHost(runCtx, o)
+	}
+
+	runSyncJoin = func(runCtx context.Context, o foldersync.JoinOptions) (*foldersync.Result, error) {
+		origRep := o.Reporter
+		o.Reporter = foldersync.ReporterFunc(func(e foldersync.Event) {
+			if origRep != nil {
+				origRep.Report(e)
+			}
+			if e.Kind == foldersync.EventCommitted && e.Result != nil {
+				joinCommitted.Add(1)
+				joinRound1Once.Do(func() { close(joinRound1Done) })
+			}
+		})
+		destReachedJoin.Store(true)
+		destOnce.Do(func() { close(destEntered) })
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-runCtx.Done():
+			return nil, runCtx.Err()
+		}
+		return origJoin(runCtx, o)
+	}
+
+	const code = "8910-cli-sync-watch"
+	srcArgs := []string{
+		"croc", "--relay", relayAddr, "--pass", "pass123",
+		"--no-update-check", "--disable-clipboard",
+		"sync", "--code", code, "--no-local", "--transport", "relay", "--watch",
+		srcDir,
+	}
+	dstArgs := []string{
+		"croc", "--relay", relayAddr, "--pass", "pass123",
+		"--no-update-check", "--disable-clipboard",
+		"sync", dstDir,
+	}
+
+	hostDone := make(chan error, 1)
+	go func() {
+		hostDone <- newApp().RunContext(srcCtx, srcArgs)
+	}()
+
+	select {
+	case <-hostEntered:
+	case hostErr := <-hostDone:
+		restoreStderr()
+		t.Fatalf("source exited before reaching RunSyncHost: %v\nstderr:\n%s", hostErr, stderrBuf.String())
+	case <-overallCtx.Done():
+		srcCancel()
+		<-hostDone
+		restoreStderr()
+		t.Fatalf("timed out waiting for source to reach RunSyncHost\nstderr:\n%s", stderrBuf.String())
+	}
+
+	require.NoError(t, os.Setenv("CROC_SECRET", code))
+
+	dstDone := make(chan error, 1)
+	go func() {
+		defer func() {
+			if !destReachedJoin.Load() {
+				srcCancel()
+				destOnce.Do(func() { close(destEntered) })
+			}
+		}()
+		dstDone <- newApp().RunContext(dstCtx, dstArgs)
+	}()
+
+	stopAndDrain := func() (error, error) {
+		srcCancel()
+		dstCancel()
+		var hostErr, joinErr error
+		var gotHost, gotJoin bool
+		timer := time.NewTimer(10 * time.Second)
+		defer timer.Stop()
+		for !gotHost || !gotJoin {
+			select {
+			case hostErr = <-hostDone:
+				gotHost = true
+				hostDone = nil
+			case joinErr = <-dstDone:
+				gotJoin = true
+				dstDone = nil
+			case <-timer.C:
+				restoreStderr()
+				t.Fatalf("watch processes did not exit after cancel (gotHost=%v gotJoin=%v)\nstderr:\n%s", gotHost, gotJoin, stderrBuf.String())
+			}
+		}
+		restoreStderr()
+		return hostErr, joinErr
+	}
+
+	waitCond := func(desc string, timeout time.Duration, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(timeout)
+		for {
+			if cond() {
+				return
+			}
+			select {
+			case err := <-hostDone:
+				hostDone = nil
+				srcCancel()
+				dstCancel()
+				if dstDone != nil {
+					<-dstDone
+					dstDone = nil
+				}
+				restoreStderr()
+				t.Fatalf("source exited early while waiting for %s: %v\nstderr:\n%s", desc, err, stderrBuf.String())
+			case err := <-dstDone:
+				dstDone = nil
+				srcCancel()
+				dstCancel()
+				if hostDone != nil {
+					<-hostDone
+					hostDone = nil
+				}
+				restoreStderr()
+				t.Fatalf("destination exited early while waiting for %s: %v\nstderr:\n%s", desc, err, stderrBuf.String())
+			case <-overallCtx.Done():
+				hostErr, joinErr := stopAndDrain()
+				t.Fatalf("overall timeout while waiting for %s (host=%v join=%v)\nstderr:\n%s", desc, hostErr, joinErr, stderrBuf.String())
+			default:
+			}
+			if time.Now().After(deadline) {
+				hostErr, joinErr := stopAndDrain()
+				t.Fatalf("timed out after %s waiting for %s (host=%v join=%v)\nstderr:\n%s", timeout, desc, hostErr, joinErr, stderrBuf.String())
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
+	waitCond("initial watch sync", 15*time.Second, func() bool {
+		select {
+		case <-hostRound1Done:
+		default:
+			return false
+		}
+		select {
+		case <-joinRound1Done:
+		default:
+			return false
+		}
+		data, readErr := os.ReadFile(filepath.Join(dstDir, "hello.txt"))
+		return readErr == nil && string(data) == "initial watch content\n"
+	})
+
+	writeSyncTestFile(t, srcDir, "hello.txt", "modified in watch mode\n")
+	writeSyncTestFile(t, srcDir, "sub/added.txt", "brand new file\n")
+
+	waitCond("modified and created files synced", 5*time.Second, func() bool {
+		if joinCommitted.Load() < 2 {
+			return false
+		}
+		d1, err1 := os.ReadFile(filepath.Join(dstDir, "hello.txt"))
+		d2, err2 := os.ReadFile(filepath.Join(dstDir, "sub", "added.txt"))
+		return err1 == nil && string(d1) == "modified in watch mode\n" &&
+			err2 == nil && string(d2) == "brand new file\n"
+	})
+
+	hostErr, joinErr := stopAndDrain()
+	stderr := stderrBuf.String()
+
+	require.NoError(t, overallCtx.Err(), "watch integration test timed out\nstderr:\n%s", stderr)
+	require.NoError(t, hostErr, "source watch returned error\nstderr:\n%s", stderr)
+	require.NoError(t, joinErr, "destination watch returned error\nstderr:\n%s", stderr)
+	require.Equal(t, snapshotSyncTree(t, srcDir), snapshotSyncTree(t, dstDir))
+	require.Contains(t, stderr, "Watching "+srcDir+" for changes (Ctrl+C to stop).")
+	require.Contains(t, stderr, "Round 1:")
+	require.Contains(t, stderr, "Round 2:")
+	require.Contains(t, stderr, "Stopped watching.")
+}

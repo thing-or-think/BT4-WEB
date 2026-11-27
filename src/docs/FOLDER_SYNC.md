@@ -56,6 +56,7 @@ CROC_SECRET='ma-phien-o-day' croc sync --dry-run --delete ./du-an
 | `--exclude <chuỗi,...>` | Loại bỏ đường dẫn chứa bất kỳ chuỗi con nào (phân tách bằng dấu phẩy, không phân biệt hoa/thường). |
 | `--exclude-file <đường-dẫn,...>` | Loại bỏ chính xác các đường dẫn tương đối đã liệt kê (phân tách bằng dấu phẩy). |
 | `--git` | Tôn trọng `.gitignore`, không đồng bộ các mục bị Git bỏ qua. |
+| `--watch` | Theo dõi liên tục thư mục nguồn và tự động đồng bộ các thay đổi sang máy đích trong cùng một phiên cho tới khi bấm `Ctrl-C`. |
 | `--no-local` | Tắt relay cục bộ và khám phá mạng LAN. |
 
 ### Cờ phía đích (có đặt `CROC_SECRET`)
@@ -80,8 +81,29 @@ CROC_SECRET='ma-phien-o-day' croc sync --dry-run --delete ./du-an
 
 | Cờ | Trạng thái |
 | --- | --- |
-| `--watch` | Chưa khả dụng (`--watch is not available yet`). |
 | `--qrcode`, `--qr` | Chưa khả dụng vì đồng bộ qua web chưa được hỗ trợ (`--qrcode needs web sync, which is not available yet`). |
+
+---
+
+## Chế độ theo dõi (--watch)
+
+Để đồng bộ liên tục mỗi khi thư mục nguồn thay đổi, bật `--watch` trên **máy nguồn**:
+
+```bash
+croc sync --watch ./du-an
+```
+
+**Máy đích không cần thêm cờ nào**: chỉ cần chạy lệnh `CROC_SECRET='...' croc sync ./du-an` như bình thường (có thể kết hợp thêm `--delete`, `--dry-run`, `--checksum`, `--yes`, `--quiet`) và máy đích sẽ tự đi theo chế độ watch của máy nguồn.
+
+Cách hoạt động của `--watch`:
+
+- **Một phiên kết nối dài**: hai máy giữ nguyên một phiên `croc` đã mã hóa PAKE xuyên suốt nhiều lượt đồng bộ liên tiếp, không cần bắt tay lại sau mỗi lần chỉnh sửa tệp.
+- **Gom sự kiện (debounce 400 ms / tối đa 2 s)**: máy nguồn theo dõi thay đổi hệ tệp (`fsnotify`, tự chuyển sang quét định kỳ dự phòng mỗi 2 giây nếu chạm giới hạn watch của hệ điều hành), chờ khoảng yên tĩnh **400 ms** để gom các thay đổi liên tiếp thành một lượt, và phát lượt mới chậm nhất sau **2 giây** kể từ sự kiện đầu tiên khi có ghi liên tục.
+- **Keepalive và tự nối lại bằng mã nối lại mới (`RejoinCode`)**: kênh gửi nhịp `sync-ping`/`sync-pong` định kỳ để giữ kết nối qua NAT/relay. Ở mỗi lượt, máy nguồn cấp một `RejoinCode` mới ngay trong kênh đã mã hóa; nếu mất kết nối, cả hai phía tự động thử kết nối lại theo backoff tăng dần bằng mã nối lại mới nhất mà không bao giờ dùng lại mã phiên ban đầu.
+- **Mỗi lượt là một lần so sánh đầy đủ**: sự kiện hệ tệp chỉ là tín hiệu kích hoạt. Ở mỗi lượt, máy nguồn quét lại toàn bộ cây thư mục và máy đích tính diff hai tầng đầy đủ như một lượt độc lập, giúp mọi thay đổi (kể cả lưu nguyên tử kiểu trình soạn thảo, tạo hàng loạt tệp, hay sau khi nối lại mạng) luôn hội tụ chính xác.
+- **Luật xóa áp dụng trên từng lượt**: mọi lớp bảo vệ của `--delete` (bảo vệ mục bị lọc/bỏ qua, nguồn rỗng, ngưỡng >50% buộc gõ `yes` kể cả khi có `--yes`) vẫn chạy ở từng lượt. Riêng khi ở chế độ watch có mục cần xóa nhưng `stdin` không phải terminal và thiếu `--yes`, máy đích **giữ lại các lệnh xóa của lượt đó** thay vì trả lỗi làm dừng watch (in thông báo gợi ý chạy lại với `--yes` để cho phép xóa trong chế độ watch) và vẫn áp dụng các thay đổi thêm/sửa khác. Nếu máy đích bật `--dry-run`, mỗi lượt sẽ in bảng kế hoạch mà không thay đổi gì trên đĩa.
+- **Dừng bằng `Ctrl-C` thoát mã `0`**: nhấn `Ctrl-C` là cách dừng bình thường của chế độ watch — cả hai phía in `Stopped watching.` và kết thúc với mã thoát `0` (chỉ trả mã `1` nếu chế độ watch dừng do lỗi nghiêm trọng).
+- **Độ trễ thực đo**: độ trễ đồng bộ cho một chỉnh sửa đơn lẻ đo được ở phân vị **p95 ≈ 0,5 s** trên relay cục bộ.
 
 ---
 
@@ -130,15 +152,14 @@ Máy đích so sánh manifest nguồn với cây thư mục đích theo cơ ch�
 
 | Mã | Ý nghĩa |
 | --- | --- |
-| `0` | Thành công hoàn toàn (bao gồm trường hợp đã đồng bộ sẵn hoặc `--dry-run` hoàn tất). |
-| `1` | Lỗi nghiêm trọng: cờ sai vai trò, thư mục không hợp lệ, lỗi mạng/PAKE/giao thức, từ chối xóa do thiếu `--yes` khi không có terminal, hoặc tiến trình bị ngắt (`Ctrl-C`). |
-| `2` | Hoàn tất một phần: có ít nhất một mục lỗi khi commit/xóa, có xung đột, hoặc các lệnh xóa bị giữ lại (chẳng hạn xóa >50% không được xác nhận hoặc bị giữ vì có lỗi commit trước đó). |
+| `0` | Thành công hoàn toàn (bao gồm trường hợp đã đồng bộ sẵn, `--dry-run` hoàn tất, hoặc dừng chế độ `--watch` bằng `Ctrl-C`). |
+| `1` | Lỗi nghiêm trọng: cờ sai vai trò, thư mục không hợp lệ, lỗi mạng/PAKE/giao thức, từ chối xóa do thiếu `--yes` khi không có terminal ở chế độ một lượt, hoặc bị ngắt (`Ctrl-C`) ở chế độ một lượt. |
+| `2` | Hoàn tất một phần (chế độ một lượt): có ít nhất một mục lỗi khi commit/xóa, có xung đột, hoặc các lệnh xóa bị giữ lại (chẳng hạn xóa >50% không được xác nhận hoặc bị giữ vì có lỗi commit trước đó). |
 
 ---
 
 ## Giới hạn hiện tại
 
-- **Chưa có chế độ `--watch`**: mỗi lệnh chỉ đồng bộ một lượt rồi kết thúc.
 - **Chưa có giao diện web (`croc-web` / `--qrcode`)**: hiện chỉ hoạt động giữa hai máy dùng CLI.
 - **Bỏ qua symlink** (và các tệp đặc biệt như pipe, socket, thiết bị): symlink không được đồng bộ mà chỉ in cảnh báo; phía đích bảo vệ các đường dẫn liên quan khỏi `--delete`.
 - **Không resume giữa chừng một lượt bị ngắt**: nếu mất kết nối hoặc bấm `Ctrl-C` giữa lượt, các tệp chưa commit vẫn giữ nguyên trạng thái cũ trên đĩa đích. Chỉ cần chạy lại `croc sync` — những tệp đã commit sẽ được bỏ qua và hai thư mục sẽ hội tụ về trạng thái giống nhau.

@@ -266,7 +266,6 @@ func TestSyncUnavailableFlagsOnSource(t *testing.T) {
 		flag string
 		want string
 	}{
-		{name: "watch", flag: "--watch", want: "--watch is not available yet"},
 		{name: "qrcode", flag: "--qrcode", want: "--qrcode needs web sync, which is not available yet"},
 		{name: "qr alias", flag: "--qr", want: "--qrcode needs web sync, which is not available yet"},
 	}
@@ -460,5 +459,163 @@ func TestSyncReporterWarnings(t *testing.T) {
 			Entries: []foldersync.Entry{*fileEntry("a.txt", 10)},
 		},
 	})
+	require.Empty(t, buf.String())
+}
+
+func TestSyncWatchMode(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("source accepts --watch and sets HostOptions.Watch", func(t *testing.T) {
+		unsetEnv(t, "CROC_SECRET")
+		var gotHost foldersync.HostOptions
+		stubSyncRunners(t,
+			func(_ context.Context, o foldersync.HostOptions) (*foldersync.Result, error) {
+				gotHost = o
+				return &foldersync.Result{DeletesHeld: 2}, nil
+			},
+			func(_ context.Context, _ foldersync.JoinOptions) (*foldersync.Result, error) {
+				t.Fatal("join runner should not be called")
+				return nil, nil
+			},
+		)
+
+		err := newApp().Run([]string{
+			"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+			"sync", "--watch", dir,
+		})
+		require.NoError(t, err)
+		require.True(t, gotHost.Watch)
+		require.NotNil(t, gotHost.Croc.SendInstructions)
+		instructions := gotHost.Croc.SendInstructions("alpha-beta-gamma", "")
+		require.Contains(t, instructions, "On the other computer, run:")
+		require.Contains(t, instructions, "Watching "+dir+" for changes (Ctrl+C to stop).\n")
+	})
+
+	t.Run("source --watch with --quiet suppresses watching line", func(t *testing.T) {
+		unsetEnv(t, "CROC_SECRET")
+		var gotHost foldersync.HostOptions
+		stubSyncRunners(t,
+			func(_ context.Context, o foldersync.HostOptions) (*foldersync.Result, error) {
+				gotHost = o
+				return nil, nil
+			},
+			nil,
+		)
+
+		err := newApp().Run([]string{
+			"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard", "--quiet",
+			"sync", "--watch", dir,
+		})
+		require.NoError(t, err)
+		require.True(t, gotHost.Watch)
+		require.NotContains(t, gotHost.Croc.SendInstructions("alpha-beta-gamma", ""), "Watching ")
+	})
+
+	t.Run("source --watch canceled context exits 0", func(t *testing.T) {
+		unsetEnv(t, "CROC_SECRET")
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		stubSyncRunners(t,
+			func(runCtx context.Context, _ foldersync.HostOptions) (*foldersync.Result, error) {
+				return nil, runCtx.Err()
+			},
+			nil,
+		)
+
+		err := newApp().RunContext(ctx, []string{
+			"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+			"sync", "--watch", dir,
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("source --watch fatal error exits 1", func(t *testing.T) {
+		unsetEnv(t, "CROC_SECRET")
+		boom := errors.New("protocol error")
+		stubSyncRunners(t,
+			func(_ context.Context, _ foldersync.HostOptions) (*foldersync.Result, error) {
+				return nil, boom
+			},
+			nil,
+		)
+
+		err := newApp().Run([]string{
+			"croc", "--relay", "127.0.0.1:9009", "--disable-clipboard",
+			"sync", "--watch", dir,
+		})
+		assertExitCode(t, err, 1)
+		require.ErrorIs(t, err, boom)
+	})
+
+	t.Run("destination learns watch mode from EventRoundStart and exits 0 on stop", func(t *testing.T) {
+		t.Setenv("CROC_SECRET", "acid-acorn-acre")
+		origIsTerm := syncStdinIsTerminal
+		syncStdinIsTerminal = func() bool { return false }
+		t.Cleanup(func() { syncStdinIsTerminal = origIsTerm })
+
+		stubSyncRunners(t, nil, func(_ context.Context, o foldersync.JoinOptions) (*foldersync.Result, error) {
+			o.Reporter.Report(foldersync.Event{Kind: foldersync.EventRoundStart, Message: "round 1"})
+			plan := &foldersync.Plan{
+				Delete: []foldersync.Change{{Path: "old.txt", Dst: fileEntry("old.txt", 1)}},
+			}
+			decision, decErr := o.Decide(plan)
+			require.NoError(t, decErr)
+			require.Equal(t, foldersync.Decision{Proceed: true, ConfirmDeletes: false}, decision)
+			require.True(t, plan.RequireDeleteConfirm)
+			return &foldersync.Result{DeletesHeld: 1}, nil
+		})
+
+		err := newApp().Run([]string{"croc", "--relay", "127.0.0.1:9009", "sync", "--delete", dir})
+		require.NoError(t, err)
+	})
+
+	t.Run("destination watch fatal error exits 1", func(t *testing.T) {
+		t.Setenv("CROC_SECRET", "acid-acorn-acre")
+		boom := errors.New("watch fatal error")
+		stubSyncRunners(t, nil, func(_ context.Context, o foldersync.JoinOptions) (*foldersync.Result, error) {
+			o.Reporter.Report(foldersync.Event{Kind: foldersync.EventRoundStart, Message: "round 1"})
+			return nil, boom
+		})
+
+		err := newApp().Run([]string{"croc", "--relay", "127.0.0.1:9009", "sync", dir})
+		assertExitCode(t, err, 1)
+		require.ErrorIs(t, err, boom)
+	})
+}
+
+func TestSyncReporterWatchEvents(t *testing.T) {
+	var buf bytes.Buffer
+	rep := newSyncReporter(&buf, "photos", false)
+
+	// One-shot mode (before any EventRoundStart) must not emit round summaries.
+	rep.Report(foldersync.Event{Kind: foldersync.EventResult, Result: &foldersync.Result{Added: 1}})
+	rep.Report(foldersync.Event{Kind: foldersync.EventCommitted, Result: &foldersync.Result{Added: 1}})
+	require.Empty(t, buf.String())
+	require.False(t, rep.isWatch())
+
+	rep.Report(foldersync.Event{Kind: foldersync.EventRoundStart, Message: "round 1"})
+	require.True(t, rep.isWatch())
+	rep.Report(foldersync.Event{Kind: foldersync.EventResult, Result: &foldersync.Result{Added: 2, Bytes: 512}})
+	rep.Report(foldersync.Event{Kind: foldersync.EventReconnecting, Message: "reconnecting in 1s after error: EOF"})
+	rep.Report(foldersync.Event{Kind: foldersync.EventReconnected})
+	rep.Report(foldersync.Event{Kind: foldersync.EventRoundStart, Message: "round 2"})
+	rep.Report(foldersync.Event{Kind: foldersync.EventCommitted, Result: &foldersync.Result{Updated: 1, Bytes: 128}})
+
+	want := strings.Join([]string{
+		"Round 1: Synced: 2 added, 0 updated, 0 touched, 0 deleted, 512 B transferred",
+		"Connection lost (EOF); reconnecting in 1s...",
+		"Reconnected.",
+		"Round 2: Synced: 0 added, 1 updated, 0 touched, 0 deleted, 128 B transferred",
+		"",
+	}, "\n")
+	require.Equal(t, want, buf.String())
+
+	buf.Reset()
+	quietRep := newSyncReporter(&buf, "photos", true)
+	quietRep.Report(foldersync.Event{Kind: foldersync.EventRoundStart, Message: "round 1"})
+	quietRep.Report(foldersync.Event{Kind: foldersync.EventCommitted, Result: &foldersync.Result{Added: 1}})
+	quietRep.Report(foldersync.Event{Kind: foldersync.EventReconnecting, Message: "reconnecting in 1s after error: EOF"})
+	quietRep.Report(foldersync.Event{Kind: foldersync.EventReconnected})
+	require.True(t, quietRep.isWatch())
 	require.Empty(t, buf.String())
 }

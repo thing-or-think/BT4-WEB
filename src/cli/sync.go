@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/schollz/croc/v11/internal/cli"
 	"github.com/schollz/croc/v11/src/codephrase"
@@ -92,6 +94,7 @@ func runSync(c *cli.Context) error {
 	comm.HttpProxy = c.String("connect")
 	out, colorEnabled := termui.Output(os.Stderr)
 	reporter := newSyncReporter(out, dir, c.Bool("quiet"))
+	reporter.color = colorEnabled
 
 	if isDestination {
 		return syncJoin(c, dir, envSecret, reporter, out, colorEnabled)
@@ -119,9 +122,6 @@ func validateSyncFlags(c *cli.Context, isDestination bool) error {
 		if c.IsSet(name) {
 			return fmt.Errorf("--%s only applies on the destination (the computer that runs croc sync with CROC_SECRET set)", name)
 		}
-	}
-	if c.Bool("watch") {
-		return errors.New("--watch is not available yet")
 	}
 	if c.Bool("qrcode") {
 		return errors.New("--qrcode needs web sync, which is not available yet")
@@ -152,7 +152,7 @@ func validateSyncDir(c *cli.Context) (string, error) {
 	return dir, nil
 }
 
-func syncHost(c *cli.Context, dir string, reporter foldersync.Reporter, out io.Writer, colorEnabled bool) error {
+func syncHost(c *cli.Context, dir string, reporter *syncReporter, out io.Writer, colorEnabled bool) error {
 	transport, err := croc.ParseTransportMode(c.String("transport"))
 	if err != nil {
 		return err
@@ -199,6 +199,9 @@ Or enable classic mode if you accept that risk:
 		ports[i] = strconv.Itoa(defaultSyncPort + i)
 	}
 
+	watch := c.Bool("watch")
+	quiet := c.Bool("quiet")
+
 	crocOptions := croc.Options{
 		SharedSecret:      c.String("code"),
 		IsSender:          true,
@@ -214,14 +217,18 @@ Or enable classic mode if you accept that risk:
 		Curve:             c.String("curve"),
 		ThrottleUpload:    c.String("throttleUpload"),
 		MulticastAddress:  c.String("multicast"),
-		Quiet:             c.Bool("quiet"),
+		Quiet:             quiet,
 		DisableClipboard:  c.Bool("disable-clipboard"),
 		ExtendedClipboard: c.Bool("extended-clipboard"),
 		NoUpdateCheck:     c.Bool("no-update-check"),
 		Transport:         transport,
 		SendInstructions: func(secret, relayFlags string) string {
 			_, colorEnabled := termui.Output(os.Stderr)
-			return formatSyncInstructions(secret, relayFlags, colorEnabled)
+			text := formatSyncInstructions(secret, relayFlags, colorEnabled)
+			if watch && !quiet {
+				text += fmt.Sprintf("Watching %s for changes (Ctrl+C to stop).\n", dir)
+			}
+			return text
 		},
 	}
 	if crocOptions.RelayAddress != models.DEFAULT_RELAY {
@@ -246,6 +253,12 @@ Or enable classic mode if you accept that risk:
 			var relayIndex int
 			relayIndex, err = selectPublicRelay(c.Context, tcp.MeasureServerLatencyContext)
 			if err != nil {
+				if watch && errors.Is(err, context.Canceled) {
+					if !quiet {
+						fmt.Fprintln(out, "Stopped watching.")
+					}
+					return nil
+				}
 				return err
 			}
 			crocOptions.SharedSecret, err = codephrase.GenerateForRelay(relayIndex, len(publicrelay.Relays()))
@@ -273,16 +286,26 @@ Or enable classic mode if you accept that risk:
 		},
 		Croc:     crocOptions,
 		Reporter: reporter,
+		Watch:    watch,
 	})
 	clearBestPublicRelayOnSendError(generatedPublicCode, err)
+	if watch {
+		if err == nil || errors.Is(err, context.Canceled) {
+			if !quiet {
+				fmt.Fprintln(out, "Stopped watching.")
+			}
+			return nil
+		}
+		return err
+	}
 	if err != nil {
 		return err
 	}
-	writeSyncSummary(out, res, c.Bool("quiet"), colorEnabled)
+	writeSyncSummary(out, res, quiet, colorEnabled)
 	return syncResultError(res)
 }
 
-func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter, out io.Writer, colorEnabled bool) error {
+func syncJoin(c *cli.Context, dir, secret string, reporter *syncReporter, out io.Writer, colorEnabled bool) error {
 	crocOptions := croc.Options{
 		SharedSecret:     secret,
 		IsSender:         false,
@@ -330,6 +353,7 @@ func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter, 
 				DryRun:     dryRun,
 				Yes:        yes,
 				Quiet:      quiet,
+				Watch:      reporter != nil && reporter.isWatch(),
 				IsTerminal: syncStdinIsTerminal(),
 				In:         os.Stdin,
 				Out:        out,
@@ -338,6 +362,15 @@ func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter, 
 		},
 		Reporter: reporter,
 	})
+	if reporter != nil && reporter.isWatch() {
+		if err == nil || errors.Is(err, context.Canceled) {
+			if !quiet {
+				fmt.Fprintln(out, "Stopped watching.")
+			}
+			return nil
+		}
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -345,33 +378,102 @@ func syncJoin(c *cli.Context, dir, secret string, reporter foldersync.Reporter, 
 	return syncResultError(res)
 }
 
-func newSyncReporter(w io.Writer, folder string, quiet bool) foldersync.Reporter {
-	return foldersync.ReporterFunc(func(e foldersync.Event) {
-		if quiet || w == nil {
+type syncReporter struct {
+	w      io.Writer
+	folder string
+	quiet  bool
+	color  bool
+
+	mu    sync.Mutex
+	watch bool
+	round int
+}
+
+func newSyncReporter(w io.Writer, folder string, quiet bool) *syncReporter {
+	return &syncReporter{
+		w:      w,
+		folder: folder,
+		quiet:  quiet,
+	}
+}
+
+func (r *syncReporter) isWatch() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.watch
+}
+
+func (r *syncReporter) Report(e foldersync.Event) {
+	if e.Kind == foldersync.EventRoundStart {
+		r.mu.Lock()
+		r.watch = true
+		r.round = parseSyncRound(e.Message, r.round)
+		r.mu.Unlock()
+		return
+	}
+	if r.quiet || r.w == nil {
+		return
+	}
+	switch e.Kind {
+	case foldersync.EventScanned:
+		if e.Manifest == nil {
 			return
 		}
-		switch e.Kind {
-		case foldersync.EventScanned:
-			if e.Manifest == nil {
-				return
-			}
-			var files, folders int
-			var totalBytes int64
-			for _, entry := range e.Manifest.Entries {
-				if entry.IsDir() {
-					folders++
-				} else {
-					files++
-					totalBytes += entry.Size
-				}
-			}
-			fmt.Fprintf(w, "Scanned %s: %d files, %d folders (%s)\n", folder, files, folders, utils.ByteCountDecimal(totalBytes))
-		case foldersync.EventWarning:
-			if e.Message != "" {
-				fmt.Fprintf(w, "warning: %s\n", e.Message)
+		var files, folders int
+		var totalBytes int64
+		for _, entry := range e.Manifest.Entries {
+			if entry.IsDir() {
+				folders++
+			} else {
+				files++
+				totalBytes += entry.Size
 			}
 		}
-	})
+		fmt.Fprintf(r.w, "Scanned %s: %d files, %d folders (%s)\n", r.folder, files, folders, utils.ByteCountDecimal(totalBytes))
+	case foldersync.EventWarning:
+		if e.Message != "" {
+			fmt.Fprintf(r.w, "warning: %s\n", e.Message)
+		}
+	case foldersync.EventResult, foldersync.EventCommitted:
+		r.mu.Lock()
+		watch := r.watch
+		round := r.round
+		r.mu.Unlock()
+		if !watch || e.Result == nil {
+			return
+		}
+		summary := formatSyncSummary(e.Result, r.color)
+		if summary != "" {
+			fmt.Fprintf(r.w, "Round %d: %s", round, summary)
+		}
+	case foldersync.EventReconnecting:
+		fmt.Fprintf(r.w, "%s\n", formatReconnectingEvent(e.Message))
+	case foldersync.EventReconnected:
+		fmt.Fprintln(r.w, "Reconnected.")
+	}
+}
+
+func parseSyncRound(msg string, prev int) int {
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(msg), "round "); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(rest)); err == nil && n > 0 {
+			return n
+		}
+	}
+	return prev + 1
+}
+
+func formatReconnectingEvent(msg string) string {
+	const prefix = "reconnecting in "
+	const sep = " after error: "
+	if rest, ok := strings.CutPrefix(msg, prefix); ok {
+		if delay, errText, ok := strings.Cut(rest, sep); ok {
+			return fmt.Sprintf("Connection lost (%s); reconnecting in %s...", errText, delay)
+		}
+	}
+	if msg == "" {
+		return "Connection lost; reconnecting..."
+	}
+	return fmt.Sprintf("Connection lost (%s); reconnecting...", msg)
 }
 
 func syncResultError(res *foldersync.Result) error {
