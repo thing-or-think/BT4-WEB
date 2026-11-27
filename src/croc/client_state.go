@@ -3,6 +3,7 @@ package croc
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/schollz/croc/v11/src/comm"
 	"github.com/schollz/progressbar/v3"
@@ -56,6 +57,13 @@ func (c *Client) resetLifecycle() {
 	})
 }
 
+func (c *Client) resetRoundLifecycle() {
+	c.updateLifecycle(func(state *transferLifecycle) {
+		secured := state.ChannelSecured
+		*state = transferLifecycle{ChannelSecured: secured}
+	})
+}
+
 func (c *Client) waitForFilesReady(ctx context.Context) error {
 	select {
 	case <-c.filesReady:
@@ -73,6 +81,12 @@ func (c *Client) finishFilePreparation(err error) {
 		}
 		close(c.filesReady)
 	})
+}
+
+func (c *Client) resetFilePreparation() {
+	c.filesReady = make(chan struct{})
+	c.filesReadyErr = nil
+	c.filesReadyOnce = sync.Once{}
 }
 
 func (c *Client) connection(index int) *comm.Comm {

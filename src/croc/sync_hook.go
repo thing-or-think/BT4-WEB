@@ -54,12 +54,15 @@ type syncHookState struct {
 	started     bool
 	planned     bool
 	finished    bool
-	// files receives the sender's selected list exactly once.
-	files chan syncSelection
+	round       int
+	// files receives the sender's selected list once per round.
+	files    chan syncSelection
+	prepDone chan struct{}
 }
 
 type syncSelection struct {
 	files, emptyFolders []FileInfo
+	totalFolders        int
 }
 
 func (c *Client) syncSend(m message.Message) error {
@@ -106,10 +109,17 @@ func (c *Client) updateSyncHook() error {
 	if !ready {
 		return nil
 	}
+	files, emptyFolders, totalFolders := c.FilesToTransfer, c.EmptyFoldersToTransfer, c.TotalNumberFolders
+	if c.sync.round > 0 {
+		if rounds, ok := hook.(SyncRounds); ok {
+			files, emptyFolders, totalFolders = rounds.NextFiles()
+		}
+	}
 	c.sync.planned = true
 	c.sync.files <- syncSelection{
-		files:        filterFileInfos(c.FilesToTransfer, keep),
-		emptyFolders: filterFileInfos(c.EmptyFoldersToTransfer, keep),
+		files:        filterFileInfos(files, keep),
+		emptyFolders: filterFileInfos(emptyFolders, keep),
+		totalFolders: totalFolders,
 	}
 	return nil
 }

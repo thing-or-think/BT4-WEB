@@ -1853,29 +1853,7 @@ func (c *Client) Send(filesInfo []FileInfo, emptyFoldersToTransfer []FileInfo, t
 	c.FilesToTransfer = filesInfo
 	c.tailcat.transferBytes.Store(totalLogicalTransferSize(filesInfo))
 	c.startTailcatPreparation()
-	hashResult := make(chan error, 1)
-	if c.Options.SyncHook != nil {
-		c.sync.files = make(chan syncSelection, 1)
-	}
-	go func() {
-		if c.Options.SyncHook != nil {
-			// transferBytes above is the upper bound used for transport choice;
-			// only the files the hook keeps are hashed and sent.
-			select {
-			case selection := <-c.sync.files:
-				filesInfo = selection.files
-				c.EmptyFoldersToTransfer = selection.emptyFolders
-				c.TotalNumberOfContents = len(filesInfo)
-			case <-c.stop.ctx.Done():
-				c.finishFilePreparation(c.stop.ctx.Err())
-				hashResult <- c.stop.ctx.Err()
-				return
-			}
-		}
-		prepareErr := c.sendCollectFiles(filesInfo)
-		c.finishFilePreparation(prepareErr)
-		hashResult <- prepareErr
-	}()
+	hashResult := c.startSenderFilePreparation(filesInfo)
 	flags := &strings.Builder{}
 	if !c.Options.PublicRelay && c.Options.RelayAddress != models.DEFAULT_RELAY && !c.Options.OnlyLocal {
 		flags.WriteString("--relay " + shellQuote(c.Options.RelayAddress) + " ")
@@ -2454,6 +2432,11 @@ controlLoop:
 					default:
 					}
 				}
+				break controlLoop
+			}
+			continue
+		case <-c.syncWakeChan():
+			if err = c.handleSyncWake(attempt); err != nil {
 				break controlLoop
 			}
 			continue
@@ -3173,9 +3156,24 @@ func (c *Client) processMessage(payload []byte, attempt *transferAttemptState) (
 	case message.TypeBundleRequest, message.TypeBundleOffer, message.TypeBundleReady, message.TypeBundleDone, message.TypeBundleClosed:
 		err = bundleVisibleError(c.processBundleMessage(m, attempt))
 	case message.TypeFinished:
-		err = message.Send(c.connection(0), c.Key, message.Message{
-			Type: message.TypeFinished,
-		})
+		if c.Options.IsSender {
+			err = message.Send(c.connection(0), c.Key, message.Message{
+				Type: message.TypeFinished,
+			})
+			if c.keepSyncSessionOpen() {
+				if err != nil {
+					return false, err
+				}
+				return false, c.resetSyncRound()
+			}
+		} else {
+			if c.keepSyncSessionOpen() {
+				return false, c.resetSyncRound()
+			}
+			err = message.Send(c.connection(0), c.Key, message.Message{
+				Type: message.TypeFinished,
+			})
+		}
 		done = true
 		c.updateLifecycle(func(state *transferLifecycle) { state.Successful = true })
 		c.tailcat.terminal.Store(true)
@@ -3630,7 +3628,7 @@ func (c *Client) updateIfRecipientHasFileInfo() (err error) {
 	if c.bundleState().lifecycle.ActiveID != 0 {
 		return nil
 	}
-	if c.Options.IsSender || !state.FileInfoTransferred || state.RecipientRequested {
+	if c.Options.IsSender || !state.FileInfoTransferred || state.RecipientRequested || state.Successful {
 		return
 	}
 	if c.bundleSessionEligible() {
