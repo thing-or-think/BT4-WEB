@@ -144,6 +144,9 @@ func (c *Client) guardSyncReceive(sendingText bool) error {
 		if fi.Symlink != "" {
 			return fmt.Errorf("folder sync peer offered symlink %q", path.Join(fi.FolderRemote, fi.Name))
 		}
+		if fi.TempFile {
+			return fmt.Errorf("folder sync peer offered archive %q", path.Join(fi.FolderRemote, fi.Name))
+		}
 		if err := guard.AllowReceive(path.Join(fi.FolderRemote, fi.Name), fi.Size, false); err != nil {
 			return err
 		}

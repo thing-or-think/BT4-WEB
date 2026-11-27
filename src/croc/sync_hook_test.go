@@ -392,3 +392,20 @@ func TestSyncHookGuardRejectsUnrequestedFile(t *testing.T) {
 		t.Fatalf("files written despite rejection: %v", entries)
 	}
 }
+
+func TestSyncHookGuardRejectsTempArchive(t *testing.T) {
+	receiver := &guardedSpikeHook{spikeSyncHook: &spikeSyncHook{}}
+	c := &Client{
+		Options: Options{SyncHook: receiver},
+		FilesToTransfer: []FileInfo{
+			{FolderRemote: "payload", Name: "evil.zip", Size: 10, TempFile: true},
+		},
+	}
+	err := c.guardSyncReceive(false)
+	if err == nil || !strings.Contains(err.Error(), `folder sync peer offered archive "payload/evil.zip"`) {
+		t.Fatalf("guardSyncReceive = %v, want archive rejection", err)
+	}
+	if len(receiver.offered) != 0 {
+		t.Fatalf("guard AllowReceive called for archive: %v", receiver.offered)
+	}
+}

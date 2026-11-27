@@ -79,6 +79,7 @@ type Session struct {
 	decision   Decision
 	needSizes  map[string]int64
 	needOrder  []string
+	accepted   map[string]bool
 	result     *Result
 	srcChanged []string
 	compares   int
@@ -409,6 +410,7 @@ func (s *Session) decide() ([]message.Message, error) {
 	s.decision = d
 	s.needSizes = map[string]int64{}
 	s.needOrder = nil
+	s.accepted = map[string]bool{}
 	if d.Proceed {
 		for _, c := range transferChanges(s.plan) {
 			s.needSizes[c.Path] = c.Src.Size
@@ -419,7 +421,7 @@ func (s *Session) decide() ([]message.Message, error) {
 	return encodePathLists(message.TypeSyncNeed, s.needOrder)
 }
 
-// AllowReceive (đích) chỉ chấp nhận tệp có trong need với đúng kích thước.
+// AllowReceive (đích) chỉ chấp nhận mỗi tệp trong need đúng một lần với đúng kích thước.
 func (s *Session) AllowReceive(path string, size int64, isDir bool) error {
 	if s.role != RoleDestination || s.state != stWaitFiles {
 		return protoErr("file %q offered outside the transfer phase", path)
@@ -432,17 +434,28 @@ func (s *Session) AllowReceive(path string, size int64, isDir bool) error {
 		return protoErr("source offered %q, which the destination did not request", path)
 	case want != size:
 		return protoErr("source offered %q with %d bytes, manifest says %d", path, size, want)
+	case s.accepted[path]:
+		return protoErr("source offered %q more than once", path)
 	}
+	s.accepted[path] = true
 	return nil
 }
 
 // Need (đích) trả danh sách tệp đã yêu cầu.
 func (s *Session) Need() []string { return slices.Clone(s.needOrder) }
 
-// Finish (đích) chạy khi croc đã nhận xong mọi tệp: commit và gửi sync-result.
+// Finish (đích) chạy khi croc đã nhận xong mọi tệp: kiểm đủ tệp đã yêu cầu, commit và gửi sync-result.
 func (s *Session) Finish() ([]message.Message, error) {
 	if s.role != RoleDestination || s.state != stWaitFiles {
 		return nil, s.fail(protoErr("finish in state %d", s.state))
+	}
+	for _, p := range s.needOrder {
+		if !s.accepted[p] {
+			return nil, s.fail(protoErr("source did not offer requested file %q", p))
+		}
+	}
+	if len(s.accepted) != len(s.needSizes) {
+		return nil, s.fail(protoErr("source offered %d files, requested %d", len(s.accepted), len(s.needSizes)))
 	}
 	r, err := s.dstEnv.Commit(s.plan, s.src, s.decision)
 	if err != nil {

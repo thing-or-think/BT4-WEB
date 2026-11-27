@@ -157,9 +157,11 @@ func TestSessionFullRound(t *testing.T) {
 		t.Fatalf("dst need = %q", got)
 	}
 
-	// croc chỉ cho nhận tệp trong need với đúng kích thước.
-	if err := dst.AllowReceive("new", 1, false); err != nil {
-		t.Fatal(err)
+	// croc chỉ cho nhận mỗi tệp trong need đúng một lần với đúng kích thước.
+	for _, p := range dst.Need() {
+		if err := dst.AllowReceive(p, int64(len(scontent[p])), false); err != nil {
+			t.Fatalf("AllowReceive(%q): %v", p, err)
+		}
 	}
 	for _, bad := range []struct {
 		p     string
@@ -214,6 +216,11 @@ func TestSessionDryRunRequestsNothing(t *testing.T) {
 	if err := dst.AllowReceive("new", 1, false); err == nil {
 		t.Fatal("dry run must refuse every file")
 	}
+	for _, p := range dst.Need() {
+		if err := dst.AllowReceive(p, int64(len(scontent[p])), false); err != nil {
+			t.Fatalf("AllowReceive(%q): %v", p, err)
+		}
+	}
 	finish, err := dst.Finish()
 	if err != nil {
 		t.Fatal(err)
@@ -251,6 +258,11 @@ func TestSessionEnvErrorsPropagate(t *testing.T) {
 	dst := NewDestSession(env, DiffOptions{}, Hello{})
 	if _, err := exchange(t, NewSourceSession(sm, &fakeSource{content: scontent}, Hello{}), dst); err != nil {
 		t.Fatal(err)
+	}
+	for _, p := range dst.Need() {
+		if err := dst.AllowReceive(p, int64(len(scontent[p])), false); err != nil {
+			t.Fatalf("AllowReceive(%q): %v", p, err)
+		}
 	}
 	if _, err := dst.Finish(); !errors.Is(err, boom) {
 		t.Fatalf("commit err = %v", err)
@@ -420,5 +432,60 @@ func TestSessionStartTwiceAndFinishMisuse(t *testing.T) {
 	bad := NewSourceSession(&Manifest{Entries: make([]Entry, MaxManifestEntries+1)}, &fakeSource{}, Hello{})
 	if _, err := bad.Start(); err == nil {
 		t.Fatal("oversized manifest start accepted")
+	}
+}
+
+// TestSessionFinishRejectsMissingOffer kiểm Finish từ chối nếu nguồn thiếu tệp đã yêu cầu và không gọi Commit.
+func TestSessionFinishRejectsMissingOffer(t *testing.T) {
+	sm, scontent := srcManifest()
+	dstEnv := &fakeDest{dst: man(), decision: Decision{Proceed: true}}
+	src := NewSourceSession(sm, &fakeSource{content: scontent}, Hello{})
+	dst := NewDestSession(dstEnv, DiffOptions{}, Hello{})
+	if _, err := exchange(t, src, dst); err != nil {
+		t.Fatal(err)
+	}
+	need := dst.Need()
+	if len(need) < 2 {
+		t.Fatalf("expected at least 2 needed files, got %q", need)
+	}
+	// Bỏ qua tệp đầu tiên trong need, chỉ chấp nhận các tệp còn lại.
+	missing := need[0]
+	for _, p := range need[1:] {
+		if err := dst.AllowReceive(p, int64(len(scontent[p])), false); err != nil {
+			t.Fatalf("AllowReceive(%q): %v", p, err)
+		}
+	}
+	_, err := dst.Finish()
+	if !errors.Is(err, ErrProtocol) || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("Finish() = %v, want ErrProtocol naming %q", err, missing)
+	}
+	if dstEnv.committed {
+		t.Fatal("Commit must not be called when an offered file is missing")
+	}
+	if dst.Done() {
+		t.Fatal("session must not be done after missing-offer failure")
+	}
+	// Phiên đã hỏng sau Finish thất bại.
+	if err := dst.AllowReceive(missing, int64(len(scontent[missing])), false); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("failed session accepted AllowReceive: %v", err)
+	}
+}
+
+// TestSessionAllowReceiveRejectsDuplicate kiểm nguồn gửi trùng cùng một đường dẫn bị từ chối.
+func TestSessionAllowReceiveRejectsDuplicate(t *testing.T) {
+	sm, scontent := srcManifest()
+	dstEnv := &fakeDest{dst: man(), decision: Decision{Proceed: true}}
+	src := NewSourceSession(sm, &fakeSource{content: scontent}, Hello{})
+	dst := NewDestSession(dstEnv, DiffOptions{}, Hello{})
+	if _, err := exchange(t, src, dst); err != nil {
+		t.Fatal(err)
+	}
+	first := dst.Need()[0]
+	size := int64(len(scontent[first]))
+	if err := dst.AllowReceive(first, size, false); err != nil {
+		t.Fatalf("first AllowReceive(%q): %v", first, err)
+	}
+	if err := dst.AllowReceive(first, size, false); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("duplicate AllowReceive(%q) = %v, want ErrProtocol", first, err)
 	}
 }
