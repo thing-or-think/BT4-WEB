@@ -62,6 +62,8 @@ func TestDecideSync(t *testing.T) {
 		forbidRead     bool
 		wantDecision   foldersync.Decision
 		wantErrSub     string
+		wantPrefix     string
+		wantEmpty      bool
 		wantOutSubs    []string
 		wantNotOutSubs []string
 	}{
@@ -71,6 +73,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{DryRun: true},
 			forbidRead:   true,
 			wantDecision: foldersync.Decision{Proceed: false},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs: []string{
 				"Plan: 1 to add, 0 to update, 0 to touch, 0 to delete, 0 conflicts, 1 unchanged",
 				"  + a.txt",
@@ -83,6 +86,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{DryRun: true, Quiet: true},
 			forbidRead:   true,
 			wantDecision: foldersync.Decision{Proceed: false},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs: []string{
 				"Plan: 1 to add, 0 to update, 0 to touch, 0 to delete, 0 conflicts, 1 unchanged",
 				"  + a.txt",
@@ -97,6 +101,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{},
 			forbidRead:   true,
 			wantDecision: foldersync.Decision{Proceed: true},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs: []string{
 				"Plan: 0 to add, 0 to update, 0 to touch, 0 to delete, 0 conflicts, 1 unchanged",
 				"Already in sync.",
@@ -108,6 +113,7 @@ func TestDecideSync(t *testing.T) {
 			opts:           syncDecideOptions{Quiet: true},
 			forbidRead:     true,
 			wantDecision:   foldersync.Decision{Proceed: true},
+			wantEmpty:      true,
 			wantNotOutSubs: []string{"Plan:", "Already in sync."},
 		},
 		{
@@ -116,6 +122,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{IsTerminal: true},
 			forbidRead:   true,
 			wantDecision: foldersync.Decision{Proceed: true},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs:  []string{"Plan: 1 to add", "  + a.txt"},
 		},
 		{
@@ -124,6 +131,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{Yes: true, IsTerminal: false},
 			forbidRead:   true,
 			wantDecision: foldersync.Decision{Proceed: true},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs:  []string{"  - old1.txt", "  - old2.txt"},
 		},
 		{
@@ -132,6 +140,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{IsTerminal: true},
 			input:        "y\n",
 			wantDecision: foldersync.Decision{Proceed: true},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs:  []string{"Apply these changes, including 2 deletion(s)? [y/N] "},
 		},
 		{
@@ -140,6 +149,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{IsTerminal: true},
 			input:        "YES\n",
 			wantDecision: foldersync.Decision{Proceed: true},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs:  []string{"Apply these changes, including 2 deletion(s)? [y/N] "},
 		},
 		{
@@ -148,6 +158,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{IsTerminal: true},
 			input:        "n\n",
 			wantDecision: foldersync.Decision{Proceed: false},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs: []string{
 				"Apply these changes, including 2 deletion(s)? [y/N] ",
 				"Nothing was changed.",
@@ -159,6 +170,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{IsTerminal: true},
 			input:        "\n",
 			wantDecision: foldersync.Decision{Proceed: false},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs:  []string{"Nothing was changed."},
 		},
 		{
@@ -167,6 +179,7 @@ func TestDecideSync(t *testing.T) {
 			opts:       syncDecideOptions{IsTerminal: false, Yes: false},
 			forbidRead: true,
 			wantErrSub: "refusing to delete 2 item(s) without --yes: stdin is not a terminal",
+			wantPrefix: "\r\nPlan: ",
 		},
 		{
 			name:         "over 50% deletes with --yes and terminal typing yes confirms deletes",
@@ -174,6 +187,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{Yes: true, IsTerminal: true},
 			input:        "yes\n",
 			wantDecision: foldersync.Decision{Proceed: true, ConfirmDeletes: true},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs: []string{
 				"This deletes 2 of the destination files (more than half). Type yes to delete them: ",
 			},
@@ -185,6 +199,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{Yes: true, IsTerminal: true},
 			input:        "y\n",
 			wantDecision: foldersync.Decision{Proceed: true, ConfirmDeletes: false},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs: []string{
 				"This deletes 2 of the destination files (more than half). Type yes to delete them: ",
 				"Deletions held; other changes will be applied.",
@@ -196,6 +211,7 @@ func TestDecideSync(t *testing.T) {
 			opts:         syncDecideOptions{Yes: true, IsTerminal: false},
 			forbidRead:   true,
 			wantDecision: foldersync.Decision{Proceed: true, ConfirmDeletes: false},
+			wantPrefix:   "\r\nPlan: ",
 			wantOutSubs:  []string{"Deletions held; other changes will be applied."},
 		},
 	}
@@ -215,10 +231,19 @@ func TestDecideSync(t *testing.T) {
 			if tt.wantErrSub != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.wantErrSub)
+				if tt.wantPrefix != "" {
+					require.True(t, strings.HasPrefix(out.String(), tt.wantPrefix), "output %q does not start with %q", out.String(), tt.wantPrefix)
+				}
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.wantDecision, got)
+			if tt.wantEmpty {
+				require.Empty(t, out.String())
+			}
+			if tt.wantPrefix != "" {
+				require.True(t, strings.HasPrefix(out.String(), tt.wantPrefix), "output %q does not start with %q", out.String(), tt.wantPrefix)
+			}
 			for _, sub := range tt.wantOutSubs {
 				require.Contains(t, out.String(), sub)
 			}

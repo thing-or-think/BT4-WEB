@@ -45,7 +45,7 @@ func decideSync(plan *foldersync.Plan, o syncDecideOptions) (foldersync.Decision
 	}
 
 	if !o.Quiet || o.DryRun {
-		_, _ = io.WriteString(out, formatSyncPlan(plan, o.Color))
+		_, _ = io.WriteString(out, "\r\n"+formatSyncPlan(plan, o.Color))
 	}
 
 	if o.DryRun {
