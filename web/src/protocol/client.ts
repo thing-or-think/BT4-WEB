@@ -41,6 +41,8 @@ import type {
   OfferedFile,
   PreparedFile,
   ReceiveCallbacks,
+  ReceiveDestination,
+  TransferOffer,
   WritablePayload,
   RemoteFileRequestWire,
   SenderInfoWire,
@@ -212,7 +214,7 @@ function closeAll(control?: CrocSocket, data: CrocSocket[] = []) {
   for (const socket of data) socket.close();
 }
 
-async function reportPeerError(
+export async function reportPeerError(
   control: CrocSocket | undefined,
   key: Uint8Array | undefined,
   error: unknown,
@@ -849,13 +851,29 @@ export class DataReceiver {
   }
 }
 
-export async function receiveFiles(options: {
+export interface ReceiveSession {
+  control: CrocSocket;
+  data: CrocSocket[];
+  key: Uint8Array;
+  cipherHandle: number;
+  peerFeatures: string[];
+  close(): Promise<void>;
+}
+
+export async function establishReceiveSession(options: {
   secret: string;
   settings: TransferSettings;
-  callbacks: ReceiveCallbacks;
+  features?: string[];
+  onStatus?(status: string): void;
   signal?: AbortSignal;
-}) {
-  const { secret, settings, callbacks, signal } = options;
+}): Promise<ReceiveSession> {
+  const {
+    secret,
+    settings,
+    features = [BUNDLE_FEATURE],
+    onStatus,
+    signal,
+  } = options;
   checkProtocolCapabilities();
   const engine = protocolEngine();
   validateSecret(secret);
@@ -869,9 +887,8 @@ export async function receiveFiles(options: {
   let key: Uint8Array | undefined;
   let cipherHandle: number | undefined;
   let pakeHandle: number | undefined;
-  let receiver: DataReceiver | undefined;
   try {
-    callbacks.onStatus?.("Connecting to relay…");
+    onStatus?.("Connecting to relay…");
     const relay = await connectRelay(
       settings,
       room,
@@ -880,10 +897,10 @@ export async function receiveFiles(options: {
       signal,
     );
     control = relay.socket;
-    callbacks.onStatus?.("Waiting for sender…");
+    onStatus?.("Waiting for sender…");
     await control.send(HANDSHAKE);
 
-    callbacks.onStatus?.("Authenticating code…");
+    onStatus?.("Authenticating code…");
     const curve = "p256";
     const pake = await engine.pakeInitWithIdentities(
       textEncoder.encode(passphrase),
@@ -899,7 +916,7 @@ export async function receiveFiles(options: {
       v: PAKE_PROTOCOL_VERSION,
       b: pake.bytes,
       b2: textEncoder.encode(curve),
-      f: [BUNDLE_FEATURE],
+      f: features,
     });
     const peerPake = await receiveControl(control);
     if (peerPake.t !== "pake" || !peerPake.b || !peerPake.b2) {
@@ -938,7 +955,7 @@ export async function receiveFiles(options: {
     }
     key = peerKeys.key;
     cipherHandle = await engine.cipherInit(key);
-    callbacks.onStatus?.("Opening transfer channels…");
+    onStatus?.("Opening transfer channels…");
     data = await openDataConnections(
       settings,
       room,
@@ -959,31 +976,74 @@ export async function receiveFiles(options: {
     if (peerIP.t !== "externalip")
       throw new Error("Sender did not secure the channel");
 
-    callbacks.onStatus?.("Waiting for file list…");
-    const fileInfo = await receiveControl(control, key);
-    if (fileInfo.t === "error")
-      throw new Error(fileInfo.m || "Sender cancelled");
-    if (fileInfo.t !== "fileinfo" || !fileInfo.b) {
-      throw new Error("Sender did not provide file metadata");
+    const sessionControl = control;
+    const sessionData = data;
+    const sessionKey = key;
+    const sessionCipherHandle = cipherHandle;
+    let closed = false;
+    return {
+      control: sessionControl,
+      data: sessionData,
+      key: sessionKey,
+      cipherHandle: sessionCipherHandle,
+      peerFeatures: [...(peerPake.f ?? [])],
+      async close() {
+        if (closed) return;
+        closed = true;
+        await engine.cipherRelease(sessionCipherHandle).catch(() => {});
+        closeAll(sessionControl, sessionData);
+      },
+    };
+  } catch (error) {
+    await reportPeerError(control, key, error);
+    if (cipherHandle !== undefined) {
+      await engine.cipherRelease(cipherHandle).catch(() => {});
     }
-    const sender = JSON.parse(textDecoder.decode(fileInfo.b)) as SenderInfoWire;
-    const offer = validateSenderInfo(sender);
-    callbacks.onStatus?.("Review the incoming files");
-    const destination = await callbacks.onOffer(offer);
-    if (!destination) {
-      await sendControl(control, { t: "error", m: "refusing files" }, key);
-      throw new Error("Transfer refused");
-    }
+    closeAll(control, data);
+    throw error;
+  } finally {
+    if (pakeHandle !== undefined)
+      await engine.pakeRelease(pakeHandle).catch(() => undefined);
+  }
+}
 
-    for (const folder of offer.emptyFolders) {
-      await destination.createEmptyFolder(folder);
-    }
-    let totalTransferred = 0;
-    let progressStarted = false;
-    receiver = new DataReceiver(data, key, offer.noCompress, cipherHandle);
+export async function receiveOfferedFiles(options: {
+  control: CrocSocket;
+  data: CrocSocket[];
+  key: Uint8Array;
+  cipherHandle?: number;
+  peerFeatures: string[];
+  offer: TransferOffer;
+  destination: ReceiveDestination;
+  callbacks?: TransferCallbacks;
+  signal?: AbortSignal;
+  sendMessage?: (message: CrocMessage) => Promise<void>;
+  receiveMessage?: () => Promise<CrocMessage>;
+}) {
+  const {
+    control,
+    data,
+    key,
+    cipherHandle,
+    peerFeatures,
+    offer,
+    destination,
+    callbacks = {},
+    signal,
+    sendMessage = (message) => sendControl(control, message, key),
+    receiveMessage = () => receiveControl(control, key),
+  } = options;
+
+  for (const folder of offer.emptyFolders) {
+    await destination.createEmptyFolder(folder);
+  }
+  let totalTransferred = 0;
+  let progressStarted = false;
+  const receiver = new DataReceiver(data, key, offer.noCompress, cipherHandle);
+  try {
     const bundleState = new BundleLifecycle();
     const canBundle =
-      (peerPake.f ?? []).includes(BUNDLE_FEATURE) && offer.bundleLimits;
+      peerFeatures.includes(BUNDLE_FEATURE) && offer.bundleLimits;
     const units = canBundle
       ? planBundles(
           offer.files.map((file) => ({
@@ -1014,15 +1074,11 @@ export async function receiveFiles(options: {
           MachineID: machineID(),
           ReconnectVersion: 0,
         };
-        await sendControl(
-          control,
-          {
-            t: "bundle-request",
-            b: textEncoder.encode(JSON.stringify(request)),
-          },
-          key,
-        );
-        const response = await receiveControl(control, key);
+        await sendMessage({
+          t: "bundle-request",
+          b: textEncoder.encode(JSON.stringify(request)),
+        });
+        const response = await receiveMessage();
         if (response.t !== "bundle-offer")
           throw new Error(`Expected bundle offer, got ${response.t}`);
         const bundleOffer = validateBundleOffer(
@@ -1048,10 +1104,7 @@ export async function receiveFiles(options: {
             totalTransferred = bytes;
           },
         );
-        const guard = new BundleControlGuard(
-          receiveControl(control, key),
-          signal,
-        );
+        const guard = new BundleControlGuard(receiveMessage(), signal);
         try {
           progressStarted = true;
           update(0, 0);
@@ -1068,14 +1121,10 @@ export async function receiveFiles(options: {
           // Attach rejection handling before ready can fail or cancellation fires.
           void received.catch(() => undefined);
           bundleState.advance(id, "ready");
-          await sendControl(
-            control,
-            {
-              t: "bundle-ready",
-              b: textEncoder.encode(JSON.stringify({ id })),
-            },
-            key,
-          );
+          await sendMessage({
+            t: "bundle-ready",
+            b: textEncoder.encode(JSON.stringify({ id })),
+          });
           await Promise.race([received, guard.failure]);
           await sink.finalize();
           await verifySink(sink, base64ToBytes(bundleOffer.hash), guard.signal);
@@ -1087,7 +1136,7 @@ export async function receiveFiles(options: {
             offsets,
             destination,
             (index) => {
-              receiver!.assertHealthy();
+              receiver.assertHealthy();
               callbacks.onFileComplete?.(offer.files[index].path);
             },
             guard.signal,
@@ -1096,11 +1145,10 @@ export async function receiveFiles(options: {
           receiver.assertHealthy();
           bundleState.advance(id, "done");
           guard.allowClosed();
-          await sendControl(
-            control,
-            { t: "bundle-done", b: textEncoder.encode(JSON.stringify({ id })) },
-            key,
-          );
+          await sendMessage({
+            t: "bundle-done",
+            b: textEncoder.encode(JSON.stringify({ id })),
+          });
           const closed = await guard.next;
           if (closed.t !== "bundle-closed")
             throw new Error(`Expected bundle closed, got ${closed.t}`);
@@ -1171,18 +1219,14 @@ export async function receiveFiles(options: {
             ? [PER_FILE_COMPRESSION_FEATURE]
             : undefined,
         };
-        await sendControl(
-          control,
-          {
-            t: "recipientready",
-            b: textEncoder.encode(JSON.stringify(request)),
-          },
-          key,
-        );
+        await sendMessage({
+          t: "recipientready",
+          b: textEncoder.encode(JSON.stringify(request)),
+        });
         await receivePromise;
         await sink.finalize();
-        await sendControl(control, { t: "close-sender" }, key);
-        const close = await receiveControl(control, key);
+        await sendMessage({ t: "close-sender" });
+        const close = await receiveMessage();
         if (close.t === "error") throw new Error(close.m || "Sender cancelled");
         if (close.t !== "close-recipient") {
           throw new Error(`Expected sender to close the file, got ${close.t}`);
@@ -1199,23 +1243,69 @@ export async function receiveFiles(options: {
     }
 
     receiver.assertHealthy();
-    await sendControl(control, { t: "finished" }, key);
-    const finishedMessage = await receiveControl(control, key);
+  } finally {
+    receiver.stop();
+  }
+}
+
+export async function receiveFiles(options: {
+  secret: string;
+  settings: TransferSettings;
+  callbacks: ReceiveCallbacks;
+  signal?: AbortSignal;
+}) {
+  const { secret, settings, callbacks, signal } = options;
+  const session = await establishReceiveSession({
+    secret,
+    settings,
+    features: [BUNDLE_FEATURE],
+    onStatus: (status) => callbacks.onStatus?.(status),
+    signal,
+  });
+  try {
+    callbacks.onStatus?.("Waiting for file list…");
+    const fileInfo = await receiveControl(session.control, session.key);
+    if (fileInfo.t === "error")
+      throw new Error(fileInfo.m || "Sender cancelled");
+    if (fileInfo.t !== "fileinfo" || !fileInfo.b) {
+      throw new Error("Sender did not provide file metadata");
+    }
+    const sender = JSON.parse(textDecoder.decode(fileInfo.b)) as SenderInfoWire;
+    const offer = validateSenderInfo(sender);
+    callbacks.onStatus?.("Review the incoming files");
+    const destination = await callbacks.onOffer(offer);
+    if (!destination) {
+      await sendControl(
+        session.control,
+        { t: "error", m: "refusing files" },
+        session.key,
+      );
+      throw new Error("Transfer refused");
+    }
+
+    await receiveOfferedFiles({
+      control: session.control,
+      data: session.data,
+      key: session.key,
+      cipherHandle: session.cipherHandle,
+      peerFeatures: session.peerFeatures,
+      offer,
+      destination,
+      callbacks,
+      signal,
+    });
+
+    await sendControl(session.control, { t: "finished" }, session.key);
+    const finishedMessage = await receiveControl(session.control, session.key);
     if (finishedMessage.t !== "finished") {
       throw new Error(`Expected transfer completion, got ${finishedMessage.t}`);
     }
     callbacks.onStatus?.("Transfer complete");
     return offer;
   } catch (error) {
-    await reportPeerError(control, key, error);
+    await reportPeerError(session.control, session.key, error);
     throw error;
   } finally {
-    receiver?.stop();
-    if (pakeHandle !== undefined)
-      await engine.pakeRelease(pakeHandle).catch(() => undefined);
-    if (cipherHandle !== undefined) {
-      await engine.cipherRelease(cipherHandle).catch(() => {});
-    }
-    closeAll(control, data);
+    await session.close();
   }
 }
