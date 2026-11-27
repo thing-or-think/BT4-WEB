@@ -3,10 +3,9 @@ import { errorMessage, textDecoder } from "./bytes";
 import {
   establishReceiveSession,
   receiveOfferedFiles,
-  reportPeerError,
 } from "./client";
 import { validateSenderInfo } from "./metadata";
-import { receiveControl, sendControl } from "./relay";
+import { flushControl, receiveControl, sendControl } from "./relay";
 import {
   HASH_SIZE,
   SyncKind,
@@ -680,21 +679,10 @@ export async function runSyncOverChannel(options: {
     }
   };
 
-  const reportErrorToPeer = async (error: unknown) => {
-    try {
-      await channel.sendControl({
-        t: "error",
-        m: errorMessage(error).slice(0, 500),
-      });
-    } catch {
-      // The connection may already be gone.
-    }
-  };
-
-  callbacks.onStatus?.("Negotiating sync…");
-  await sendAll(session.start());
-
   try {
+    callbacks.onStatus?.("Negotiating sync…");
+    await sendAll(session.start());
+
     while (!session.waitingForFiles()) {
       if (signal?.aborted) {
         throw new DOMException("Transfer cancelled", "AbortError");
@@ -814,10 +802,39 @@ export async function runSyncOverChannel(options: {
       error instanceof SyncWatchUnsupportedError ||
       error instanceof SyncProtocolError
     ) {
-      await reportErrorToPeer(error);
+      await sendAndFlushControlError(
+        (msg) => channel.sendControl(msg),
+        channel.controlSocket,
+        error,
+      );
     }
     throw error;
   }
+}
+
+const ERROR_PEER_CLOSE_TIMEOUT_MS = 1_000;
+
+async function sendAndFlushControlError(
+  send: (message: CrocMessage) => Promise<void>,
+  control: CrocSocket | undefined,
+  error: unknown,
+): Promise<boolean> {
+  let sent = false;
+  try {
+    await send({
+      t: "error",
+      m: errorMessage(error).slice(0, 500),
+    });
+    sent = true;
+  } catch {
+    // The connection may already be gone.
+  }
+  if (sent && control) {
+    await flushControl(control, {
+      peerCloseTimeoutMs: ERROR_PEER_CLOSE_TIMEOUT_MS,
+    }).catch(() => undefined);
+  }
+  return sent;
 }
 
 export async function syncReceive(
@@ -849,15 +866,15 @@ export async function syncReceive(
     }
 
     const channel: SyncChannel = {
-      sendControl(msg) {
-        if (msg.t === "error") {
-          peerErrorReported = true;
-        }
-        return sendControl(
+      async sendControl(msg) {
+        await sendControl(
           session.control,
           msg as unknown as CrocMessage,
           session.key,
         );
+        if (msg.t === "error") {
+          peerErrorReported = true;
+        }
       },
       receiveControl() {
         return receiveControl(session.control, session.key);
@@ -880,10 +897,23 @@ export async function syncReceive(
     });
   } catch (error) {
     if (!peerErrorReported) {
-      await reportPeerError(session.control, session.key, error);
+      await sendAndFlushControlError(
+        (msg) => sendControl(session.control, msg, session.key),
+        session.control,
+        error,
+      );
     }
     throw error;
   } finally {
+    // Close data sockets only after any control error was sent, flushed, and
+    // given time for peer close, then close the control socket via session.close().
+    for (const socket of session.data) {
+      try {
+        socket.close();
+      } catch {
+        // Best-effort close before releasing the session and control socket.
+      }
+    }
     await session.close();
   }
 }

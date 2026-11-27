@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const engineMocks = vi.hoisted(() => ({
+  encrypt: vi.fn(async (bytes: Uint8Array) => bytes),
   decrypt: vi.fn(async (bytes: Uint8Array) => bytes),
   decompress: vi.fn(async (bytes: Uint8Array) => bytes),
   compress: vi.fn(async (bytes: Uint8Array) => bytes),
+}));
+
+const clientMocks = vi.hoisted(() => ({
+  establishReceiveSession: vi.fn(),
 }));
 
 vi.mock("./compression", () => ({
@@ -14,7 +19,16 @@ vi.mock("./engine", () => ({
   protocolEngine: () => engineMocks,
 }));
 
+vi.mock("./client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./client")>();
+  return {
+    ...actual,
+    establishReceiveSession: clientMocks.establishReceiveSession,
+  };
+});
+
 import { bytesToBase64, textDecoder, textEncoder } from "./bytes";
+import type { ReceiveSession } from "./client";
 import { SyncKind, type SyncManifest, type SyncPlan } from "./sync-diff";
 import { hashFileXXH64 } from "./sync-fs";
 import { MemorySyncHashCacheStore, SyncHashCache } from "./sync-hash-cache";
@@ -25,6 +39,7 @@ import {
   SyncWatchUnsupportedError,
   WATCH_UNSUPPORTED_ERROR,
   runSyncOverChannel,
+  syncReceive,
   type SyncChannel,
   type SyncDestEnv,
 } from "./sync";
@@ -47,6 +62,7 @@ import type {
   CrocMessage,
   RemoteFileRequestWire,
   SenderInfoWire,
+  TransferSettings,
 } from "./types";
 import { XXH64 } from "./xxh64";
 
@@ -481,8 +497,11 @@ function createScriptedChannel(opts: ScriptedSourceOptions) {
 }
 
 beforeEach(() => {
+  engineMocks.encrypt.mockImplementation(async (bytes: Uint8Array) => bytes);
   engineMocks.decrypt.mockImplementation(async (bytes: Uint8Array) => bytes);
   engineMocks.decompress.mockImplementation(async (bytes: Uint8Array) => bytes);
+  engineMocks.compress.mockImplementation(async (bytes: Uint8Array) => bytes);
+  clientMocks.establishReceiveSession.mockReset();
 });
 
 describe("sync destination protocol (scripted source, no network)", () => {
@@ -957,5 +976,366 @@ describe("sync destination protocol (scripted source, no network)", () => {
     expect(session.need()).toEqual(["one.txt"]);
     await expect(session.finish()).rejects.toThrow(SyncProtocolError);
     expect(committed).toBe(false);
+  });
+});
+
+const TEST_SETTINGS: TransferSettings = {
+  gatewayURL: "/ws",
+  relayAddresses: ["127.0.0.1:9009"],
+  relayPassword: "pass123",
+  storeAPI: "/api/v1/store/transfers",
+};
+
+function createFakeFlushSession(options: {
+  incoming?: SyncWireMessage[];
+  peerFeatures?: string[];
+  sendErrorDelayMs?: number;
+  drainAfterMs?: number;
+  closeAfterDrainMs?: number;
+  dataSocketCount?: number;
+}) {
+  const events: string[] = [];
+  const sentMessages: Array<{ t: string; m?: string }> = [];
+  const queue = new AsyncQueue<Uint8Array>();
+  for (const msg of options.incoming ?? []) {
+    const wire: Record<string, unknown> = { t: msg.t };
+    if (msg.b?.byteLength) wire.b = bytesToBase64(msg.b);
+    queue.push(textEncoder.encode(JSON.stringify(wire)));
+  }
+
+  const listeners = new Map<string, Map<() => void, boolean>>();
+  let buffered = 0;
+  let readyState = 1; // WebSocket.OPEN
+  let controlClosed = false;
+
+  const emit = (type: string) => {
+    const entries = listeners.get(type);
+    if (!entries) return;
+    for (const [fn, once] of [...entries.entries()]) {
+      if (once) entries.delete(fn);
+      fn();
+    }
+  };
+
+  const rawSocket = {
+    get bufferedAmount() {
+      return buffered;
+    },
+    get readyState() {
+      return readyState;
+    },
+    addEventListener(
+      type: string,
+      listener: () => void,
+      opts?: { once?: boolean },
+    ) {
+      let entries = listeners.get(type);
+      if (!entries) {
+        entries = new Map();
+        listeners.set(type, entries);
+      }
+      entries.set(listener, Boolean(opts?.once));
+    },
+    removeEventListener(type: string, listener: () => void) {
+      listeners.get(type)?.delete(listener);
+    },
+  };
+
+  const control = {
+    socket: rawSocket,
+    async send(payload: Uint8Array) {
+      const parsed = JSON.parse(textDecoder.decode(payload)) as {
+        t: string;
+        m?: string;
+      };
+      if (parsed.t === "error" && options.sendErrorDelayMs) {
+        await new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, options.sendErrorDelayMs);
+        });
+      }
+      sentMessages.push(parsed);
+      events.push(`send:${parsed.t}`);
+      if (parsed.t === "error") {
+        buffered = payload.byteLength;
+        const drainAfterMs = options.drainAfterMs ?? 30;
+        globalThis.setTimeout(() => {
+          buffered = 0;
+          events.push("bufferedAmount:0");
+          if (options.closeAfterDrainMs !== undefined) {
+            globalThis.setTimeout(() => {
+              if (readyState === 1) {
+                readyState = 3; // WebSocket.CLOSED
+                events.push("peer:close");
+                emit("close");
+              }
+            }, options.closeAfterDrainMs);
+          }
+        }, drainAfterMs);
+      }
+    },
+    receive() {
+      return queue.shift();
+    },
+    close() {
+      if (controlClosed) return;
+      controlClosed = true;
+      readyState = 3;
+      events.push("close:control");
+    },
+  } as unknown as CrocSocket;
+
+  const dataSockets: CrocSocket[] = Array.from(
+    { length: options.dataSocketCount ?? 1 },
+    () => {
+      let closed = false;
+      return {
+        receive: () => new Promise<Uint8Array>(() => {}),
+        send: async () => undefined,
+        close() {
+          if (closed) return;
+          closed = true;
+          events.push("close:data");
+        },
+      } as unknown as CrocSocket;
+    },
+  );
+
+  const session: ReceiveSession = {
+    control,
+    data: dataSockets,
+    key: new Uint8Array(32),
+    cipherHandle: 1,
+    peerFeatures: options.peerFeatures ?? [SYNC_FEATURE],
+    async close() {
+      control.close();
+      for (const socket of dataSockets) {
+        socket.close();
+      }
+    },
+  };
+
+  return { session, events, sentMessages };
+}
+
+describe("refusal error flush before close", () => {
+  it("waits for bufferedAmount to drain and resolves early on peer close when refusing watch mode", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeFlushSession({
+        incoming: [
+          encodeHello({
+            version: SYNC_PROTOCOL_VERSION,
+            role: "source",
+            watch: true,
+          }),
+        ],
+        drainAfterMs: 30,
+        closeAfterDrainMs: 20,
+      });
+      clientMocks.establishReceiveSession.mockResolvedValueOnce(fake.session);
+
+      const root = new FakeDirHandle("dest");
+      const settled = syncReceive({
+        secret: "test-watch-secret",
+        settings: TEST_SETTINGS,
+        root: root.asHandle(),
+        decide: async () => ({ proceed: true, confirmDeletes: false }),
+      }).catch((err: unknown) => err);
+
+      // While bufferedAmount > 0, sockets must stay open.
+      await vi.advanceTimersByTimeAsync(25);
+      expect(fake.events).toEqual(["send:sync-hello", "send:error"]);
+
+      // Once bufferedAmount reaches 0, still give the peer time to close first.
+      await vi.advanceTimersByTimeAsync(15);
+      expect(fake.events).toEqual([
+        "send:sync-hello",
+        "send:error",
+        "bufferedAmount:0",
+      ]);
+
+      // When the peer closes, resolve early without waiting the full 1s cap, then close.
+      await vi.advanceTimersByTimeAsync(15);
+      const error = await settled;
+      expect(error).toBeInstanceOf(SyncWatchUnsupportedError);
+      expect(fake.events).toEqual([
+        "send:sync-hello",
+        "send:error",
+        "bufferedAmount:0",
+        "peer:close",
+        "close:data",
+        "close:control",
+      ]);
+      expect(fake.sentMessages.filter((m) => m.t === "error")).toEqual([
+        { t: "error", m: WATCH_UNSUPPORTED_ERROR },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("flushes refusal error and closes after peer-close grace cap when refusing non-sync sender", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeFlushSession({
+        peerFeatures: ["small-file-bundles-v1"],
+        drainAfterMs: 25,
+      });
+      clientMocks.establishReceiveSession.mockResolvedValueOnce(fake.session);
+
+      const root = new FakeDirHandle("dest");
+      const settled = syncReceive({
+        secret: "test-nonsync-secret",
+        settings: TEST_SETTINGS,
+        root: root.asHandle(),
+        decide: async () => ({ proceed: true, confirmDeletes: false }),
+      }).catch((err: unknown) => err);
+
+      await vi.advanceTimersByTimeAsync(20);
+      expect(fake.events).toEqual(["send:error"]);
+
+      // After bufferedAmount drains, keep open for the peer-close grace window.
+      await vi.advanceTimersByTimeAsync(900);
+      expect(fake.events).toEqual(["send:error", "bufferedAmount:0"]);
+
+      // Once the ~1s grace window elapses, close data sockets and then control.
+      await vi.advanceTimersByTimeAsync(150);
+      const error = await settled;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(SENDER_NOT_SYNC_ERROR);
+      expect(fake.events).toEqual([
+        "send:error",
+        "bufferedAmount:0",
+        "close:data",
+        "close:control",
+      ]);
+      expect(fake.sentMessages).toEqual([
+        { t: "error", m: SENDER_NOT_SYNC_ERROR },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("flushes refusal error before close on SyncProtocolError (unsupported protocol version)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeFlushSession({
+        incoming: [
+          encodeHello({
+            version: SYNC_PROTOCOL_VERSION + 1,
+            role: "source",
+          }),
+        ],
+        drainAfterMs: 20,
+        closeAfterDrainMs: 10,
+      });
+      clientMocks.establishReceiveSession.mockResolvedValueOnce(fake.session);
+
+      const root = new FakeDirHandle("dest");
+      const settled = syncReceive({
+        secret: "test-proto-secret",
+        settings: TEST_SETTINGS,
+        root: root.asHandle(),
+        decide: async () => ({ proceed: true, confirmDeletes: false }),
+      }).catch((err: unknown) => err);
+
+      await vi.advanceTimersByTimeAsync(15);
+      expect(fake.events).toEqual(["send:sync-hello", "send:error"]);
+
+      await vi.advanceTimersByTimeAsync(30);
+      const error = await settled;
+      expect(error).toBeInstanceOf(SyncProtocolError);
+      expect(fake.events).toEqual([
+        "send:sync-hello",
+        "send:error",
+        "bufferedAmount:0",
+        "peer:close",
+        "close:data",
+        "close:control",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not close any data or control socket before the watch refusal error is sent, flushed, and awaited", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeFlushSession({
+        incoming: [
+          encodeHello({
+            version: SYNC_PROTOCOL_VERSION,
+            role: "source",
+            watch: true,
+          }),
+        ],
+        sendErrorDelayMs: 15,
+        drainAfterMs: 30,
+        dataSocketCount: 2,
+      });
+      clientMocks.establishReceiveSession.mockResolvedValueOnce(fake.session);
+
+      const root = new FakeDirHandle("dest");
+      const settled = syncReceive({
+        secret: "test-watch-order-secret",
+        settings: TEST_SETTINGS,
+        root: root.asHandle(),
+        decide: async () => ({ proceed: true, confirmDeletes: false }),
+      }).catch((err: unknown) => err);
+
+      // While sending the error frame is still in flight, no socket may close.
+      await vi.advanceTimersByTimeAsync(10);
+      expect(fake.events).toEqual(["send:sync-hello"]);
+      expect(fake.events.some((e) => e.startsWith("close:"))).toBe(false);
+
+      // Error frame sent, still draining bufferedAmount: no socket may close.
+      await vi.advanceTimersByTimeAsync(20);
+      expect(fake.events).toEqual(["send:sync-hello", "send:error"]);
+      expect(fake.events.some((e) => e.startsWith("close:"))).toBe(false);
+
+      // Buffer drained, waiting up to 1s for peer close: no socket may close yet.
+      await vi.advanceTimersByTimeAsync(25);
+      expect(fake.events).toEqual([
+        "send:sync-hello",
+        "send:error",
+        "bufferedAmount:0",
+      ]);
+      expect(fake.events.some((e) => e.startsWith("close:"))).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(900);
+      expect(fake.events).toEqual([
+        "send:sync-hello",
+        "send:error",
+        "bufferedAmount:0",
+      ]);
+      expect(fake.events.some((e) => e.startsWith("close:"))).toBe(false);
+
+      // Once the 1s peer-close wait expires, close data sockets and then control.
+      await vi.advanceTimersByTimeAsync(150);
+      const error = await settled;
+      expect(error).toBeInstanceOf(SyncWatchUnsupportedError);
+      expect(fake.events).toEqual([
+        "send:sync-hello",
+        "send:error",
+        "bufferedAmount:0",
+        "close:data",
+        "close:data",
+        "close:control",
+      ]);
+
+      const sendIdx = fake.events.indexOf("send:error");
+      const flushIdx = fake.events.indexOf("bufferedAmount:0");
+      const firstCloseIdx = fake.events.findIndex((e) =>
+        e.startsWith("close:"),
+      );
+      const controlCloseIdx = fake.events.indexOf("close:control");
+      expect(sendIdx).toBeGreaterThan(-1);
+      expect(flushIdx).toBeGreaterThan(sendIdx);
+      expect(firstCloseIdx).toBeGreaterThan(flushIdx);
+      expect(controlCloseIdx).toBeGreaterThan(firstCloseIdx);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

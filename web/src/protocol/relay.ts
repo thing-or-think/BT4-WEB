@@ -143,6 +143,126 @@ export async function measureRelayLatency(
   }
 }
 
+const DEFAULT_FLUSH_POLL_MS = 10;
+const DEFAULT_DRAIN_TIMEOUT_MS = 2_000;
+const DEFAULT_PEER_CLOSE_TIMEOUT_MS = 1_000;
+const WS_OPEN_STATE = 1;
+
+type RawWebSocketLike = {
+  readonly bufferedAmount?: number;
+  readonly readyState?: number;
+  addEventListener?: (
+    type: string,
+    listener: () => void,
+    options?: { once?: boolean },
+  ) => void;
+  removeEventListener?: (type: string, listener: () => void) => void;
+};
+
+export interface FlushControlOptions {
+  pollIntervalMs?: number;
+  drainTimeoutMs?: number;
+  peerCloseTimeoutMs?: number;
+}
+
+function inspectRawSocket(
+  socket: CrocSocket | undefined,
+): RawWebSocketLike | undefined {
+  if (!socket || typeof socket !== "object") return undefined;
+  const wrapped = (socket as unknown as { socket?: unknown }).socket;
+  if (wrapped && typeof wrapped === "object") {
+    return wrapped as RawWebSocketLike;
+  }
+  const direct = socket as unknown as RawWebSocketLike;
+  if (
+    typeof direct.bufferedAmount === "number" ||
+    typeof direct.readyState === "number" ||
+    typeof direct.addEventListener === "function"
+  ) {
+    return direct;
+  }
+  return undefined;
+}
+
+function isRawSocketOpen(raw: RawWebSocketLike): boolean {
+  return raw.readyState === undefined || raw.readyState === WS_OPEN_STATE;
+}
+
+function waitDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+export async function flushControl(
+  socket: CrocSocket | undefined,
+  options: FlushControlOptions = {},
+): Promise<void> {
+  const raw = inspectRawSocket(socket);
+  if (!raw) return;
+
+  const pollIntervalMs = Math.max(
+    1,
+    options.pollIntervalMs ?? DEFAULT_FLUSH_POLL_MS,
+  );
+  const drainTimeoutMs = Math.max(
+    0,
+    options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
+  );
+  const peerCloseTimeoutMs = Math.max(
+    0,
+    options.peerCloseTimeoutMs ?? DEFAULT_PEER_CLOSE_TIMEOUT_MS,
+  );
+
+  if (drainTimeoutMs > 0) {
+    let buffered = raw.bufferedAmount;
+    if (typeof buffered === "number" && buffered > 0) {
+      const drainDeadline = Date.now() + drainTimeoutMs;
+      while (
+        isRawSocketOpen(raw) &&
+        typeof buffered === "number" &&
+        buffered > 0
+      ) {
+        const remaining = drainDeadline - Date.now();
+        if (remaining <= 0) break;
+        await waitDelay(Math.min(pollIntervalMs, remaining));
+        buffered = raw.bufferedAmount;
+      }
+    }
+  }
+
+  if (!isRawSocketOpen(raw) || peerCloseTimeoutMs <= 0) return;
+
+  const addEventListener = raw.addEventListener?.bind(raw);
+  if (addEventListener) {
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        globalThis.clearTimeout(timer);
+        raw.removeEventListener?.("close", finish);
+        raw.removeEventListener?.("error", finish);
+        resolve();
+      };
+      const timer = globalThis.setTimeout(finish, peerCloseTimeoutMs);
+      addEventListener("close", finish, { once: true });
+      addEventListener("error", finish, { once: true });
+      if (!isRawSocketOpen(raw)) {
+        finish();
+      }
+    });
+    return;
+  }
+
+  const closeDeadline = Date.now() + peerCloseTimeoutMs;
+  while (isRawSocketOpen(raw)) {
+    const remaining = closeDeadline - Date.now();
+    if (remaining <= 0) break;
+    await waitDelay(Math.min(pollIntervalMs, remaining));
+  }
+}
+
 export async function sendControl(
   socket: CrocSocket,
   message: CrocMessage,

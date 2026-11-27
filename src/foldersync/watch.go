@@ -417,12 +417,11 @@ func (h *sourceWatchHook) Handle(m message.Message, send func(message.Message) e
 	}
 	switch m.Type {
 	case message.TypeSyncHello:
-		if !h.state.established {
-			// Lượt đầu đã qua PAKE và trao đổi Hello: bật trạng thái nối lại với RejoinCode lượt 1.
-			h.state.established = true
-			h.state.rejoinCode = h.pendingRejoinCode
-		} else if h.roundNum > 1 && h.s.PeerHello().Round == h.roundNum {
-			// Ở lượt kế tiếp trên cùng phiên, đích chỉ gửi Hello mang số lượt này sau khi đã nhận Hello (và RejoinCode) mới.
+		// Không đánh dấu established từ Hello đầu tiên của máy đích: máy đích gửi Hello ngay lúc Start
+		// trước khi đọc Hello (watch=true) của nguồn và có thể từ chối ngay sau đó. Watch chỉ được
+		// thiết lập khi đích chấp nhận lượt 1 (sync-hash-request, sync-need hoặc sync-result).
+		// Ở lượt kế tiếp trên cùng phiên, đích chỉ gửi Hello mang số lượt này sau khi đã nhận Hello (và RejoinCode) mới.
+		if h.state.established && h.roundNum > 1 && h.s.PeerHello().Round == h.roundNum {
 			h.state.rejoinCode = h.pendingRejoinCode
 		}
 	case message.TypeSyncHashRequest, message.TypeSyncNeed:

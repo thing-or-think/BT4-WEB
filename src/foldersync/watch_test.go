@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -881,5 +882,292 @@ func TestWatchPeerErrorRefusalStopsImmediately(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		cancel()
 		t.Fatal("refusing destination did not exit within 5s")
+	}
+}
+
+type closeableTCPProxy struct {
+	addr     string
+	listener net.Listener
+	mu       sync.Mutex
+	closed   bool
+	conns    []net.Conn
+	wg       sync.WaitGroup
+}
+
+func startCloseableTCPProxy(t *testing.T, target string) *closeableTCPProxy {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &closeableTCPProxy{
+		addr:     ln.Addr().String(),
+		listener: ln,
+	}
+	p.wg.Go(func() {
+		for {
+			clientConn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			upstream, err := net.Dial("tcp", target)
+			if err != nil {
+				_ = clientConn.Close()
+				continue
+			}
+			p.mu.Lock()
+			if p.closed {
+				p.mu.Unlock()
+				_ = clientConn.Close()
+				_ = upstream.Close()
+				continue
+			}
+			p.conns = append(p.conns, clientConn, upstream)
+			p.mu.Unlock()
+			p.wg.Go(func() {
+				_, _ = io.Copy(upstream, clientConn)
+				_ = upstream.Close()
+			})
+			p.wg.Go(func() {
+				_, _ = io.Copy(clientConn, upstream)
+				_ = clientConn.Close()
+			})
+		}
+	})
+	t.Cleanup(func() {
+		p.Close()
+		p.wg.Wait()
+	})
+	return p
+}
+
+func (p *closeableTCPProxy) Close() {
+	_ = p.listener.Close()
+	p.mu.Lock()
+	p.closed = true
+	conns := append([]net.Conn(nil), p.conns...)
+	p.conns = nil
+	p.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
+}
+
+// observeHelloHook bọc sourceWatchHook để báo hiệu ngay sau khi nguồn xử lý sync-hello của đích.
+type observeHelloHook struct {
+	croc.SyncHook
+	rounds  croc.SyncRounds
+	onHello func()
+}
+
+var (
+	_ croc.SyncHook   = (*observeHelloHook)(nil)
+	_ croc.SyncRounds = (*observeHelloHook)(nil)
+)
+
+func (h *observeHelloHook) Handle(m message.Message, send func(message.Message) error) error {
+	err := h.SyncHook.Handle(m, send)
+	if err == nil && m.Type == message.TypeSyncHello && h.onHello != nil {
+		h.onHello()
+	}
+	return err
+}
+
+func (h *observeHelloHook) Wake() <-chan struct{} {
+	return h.rounds.Wake()
+}
+
+func (h *observeHelloHook) OnWake(send func(message.Message) error) error {
+	return h.rounds.OnWake(send)
+}
+
+func (h *observeHelloHook) KeepOpen() bool {
+	return h.rounds.KeepOpen()
+}
+
+func (h *observeHelloHook) NextFiles() ([]croc.FileInfo, []croc.FileInfo, int) {
+	return h.rounds.NextFiles()
+}
+
+// helloThenCloseDestHook mô phỏng trình duyệt gửi sync-hello ngay lúc bắt đầu rồi đóng kết nối
+// sau khi đọc sync-hello (watch=true) của nguồn mà không gửi thêm bản tin nào.
+type helloThenCloseDestHook struct {
+	hostSawHello <-chan struct{}
+	closeConn    func()
+	closeOnce    sync.Once
+}
+
+var _ croc.SyncHook = (*helloThenCloseDestHook)(nil)
+
+func (h *helloThenCloseDestHook) Feature() string { return message.FeatureFolderSync }
+
+func (h *helloThenCloseDestHook) Start(send func(message.Message) error) error {
+	hello, err := encodeMsg(message.TypeSyncHello, Hello{
+		Version: ProtocolVersion,
+		Role:    RoleDestination,
+	})
+	if err != nil {
+		return err
+	}
+	return send(hello)
+}
+
+func (h *helloThenCloseDestHook) Handle(m message.Message, _ func(message.Message) error) error {
+	if m.Type == message.TypeSyncHello {
+		h.closeOnce.Do(func() {
+			select {
+			case <-h.hostSawHello:
+			case <-time.After(3 * time.Second):
+			}
+			h.closeConn()
+		})
+	}
+	return nil
+}
+
+func (h *helloThenCloseDestHook) Ready() (bool, func(croc.FileInfo) bool) {
+	return false, nil
+}
+
+func TestWatchCloseAfterHelloStopsWithoutReconnect(t *testing.T) {
+	// Kiểm tra đơn vị: sync-hello lượt 1 của đích KHÔNG đánh dấu established hay mở khóa rejoinCode;
+	// chỉ khi đích chấp nhận lượt 1 (sync-need / sync-hash-request / sync-result) mới thiết lập watch.
+	sm, scontent := srcManifest()
+	state := &sourceWatchState{}
+	src := NewSourceSession(sm, &fakeSource{content: scontent}, Hello{
+		Round:      1,
+		Watch:      true,
+		RejoinCode: "rejoin-round-1",
+	})
+	hook := &sourceWatchHook{
+		ctx:               context.Background(),
+		state:             state,
+		wakeCh:            make(chan struct{}, 1),
+		s:                 src,
+		roundNum:          1,
+		roundActive:       true,
+		pendingRejoinCode: "rejoin-round-1",
+	}
+	discardSend := func(message.Message) error { return nil }
+	if err := hook.Start(discardSend); err != nil {
+		t.Fatalf("hook.Start: %v", err)
+	}
+	destHello, err := encodeMsg(message.TypeSyncHello, Hello{
+		Version: ProtocolVersion,
+		Role:    RoleDestination,
+	})
+	if err != nil {
+		t.Fatalf("encode dest hello: %v", err)
+	}
+	if err := hook.Handle(destHello, discardSend); err != nil {
+		t.Fatalf("hook.Handle(hello): %v", err)
+	}
+	if state.established || state.rejoinCode != "" {
+		t.Fatalf("after round-1 dest hello: established=%v rejoinCode=%q, want false and empty",
+			state.established, state.rejoinCode)
+	}
+	needMsgs, err := encodePathLists(message.TypeSyncNeed, nil)
+	if err != nil {
+		t.Fatalf("encode sync-need: %v", err)
+	}
+	for _, nm := range needMsgs {
+		if err := hook.Handle(nm, discardSend); err != nil {
+			t.Fatalf("hook.Handle(sync-need): %v", err)
+		}
+	}
+	if !state.established || state.rejoinCode != "rejoin-round-1" {
+		t.Fatalf("after round-1 sync-need: established=%v rejoinCode=%q, want true and %q",
+			state.established, state.rejoinCode, "rejoin-round-1")
+	}
+
+	// Kiểm tra tích hợp: máy đích gửi sync-hello rồi đóng kết nối mà không gửi thêm bản tin nào
+	// (mô phỏng trình duyệt từ chối/đóng sớm) -> RunSyncHost thoát trong 5s với newClient gọi 1 lần.
+	setWatchTimers(t, 1*time.Second, 100*time.Millisecond, 500*time.Millisecond)
+
+	hostSawHello := make(chan struct{})
+	var sawHelloOnce sync.Once
+	var newClientCalls atomic.Int32
+	origNewClient := newClient
+	newClient = func(cctx context.Context, ops croc.Options) (*croc.Client, error) {
+		if ops.IsSender {
+			newClientCalls.Add(1)
+			if rounds, ok := ops.SyncHook.(croc.SyncRounds); ok {
+				ops.SyncHook = &observeHelloHook{
+					SyncHook: ops.SyncHook,
+					rounds:   rounds,
+					onHello:  func() { sawHelloOnce.Do(func() { close(hostSawHello) }) },
+				}
+			}
+		}
+		return origNewClient(cctx, ops)
+	}
+	t.Cleanup(func() { newClient = origNewClient })
+
+	relay := startRelay(t)
+	proxy := startCloseableTCPProxy(t, relay.address)
+	srcDir, dstRoot := t.TempDir(), t.TempDir()
+	writeFile(t, srcDir, "hello.txt", "initial")
+
+	secret := fmt.Sprintf("%d-folder-sync-hello-close", 8600+roomCounter.Add(1))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	hostDone := make(chan error, 1)
+	go func() {
+		_, err := RunSyncHost(ctx, HostOptions{
+			Dir:          srcDir,
+			Croc:         crocOptions(relay, secret, true),
+			Watch:        true,
+			WatchOptions: shortWatchOptions(),
+		})
+		hostDone <- err
+	}()
+
+	recvDone := make(chan error, 1)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		recvOps := crocOptions(relay, secret, false)
+		recvOps.RelayAddress = proxy.addr
+		recvOps.ReceiveRoot = dstRoot
+		recvOps.SyncHook = &helloThenCloseDestHook{
+			hostSawHello: hostSawHello,
+			closeConn:    proxy.Close,
+		}
+		client, err := origNewClient(ctx, recvOps)
+		if err != nil {
+			recvDone <- err
+			return
+		}
+		recvDone <- client.Receive()
+	}()
+
+	select {
+	case hostErr := <-hostDone:
+		if hostErr == nil {
+			t.Fatal("RunSyncHost returned nil, want error when destination closes after hello")
+		}
+		if isPeerError(hostErr) {
+			t.Fatalf("RunSyncHost error = %v, expected plain disconnect (no peer error frame sent)", hostErr)
+		}
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatalf("RunSyncHost did not return within 5s after destination closed post-hello (newClient calls=%d)", newClientCalls.Load())
+	}
+
+	select {
+	case <-hostSawHello:
+	default:
+		t.Fatal("host did not process destination sync-hello before disconnect")
+	}
+
+	if got := newClientCalls.Load(); got != 1 {
+		t.Fatalf("newClient calls = %d, want 1", got)
+	}
+
+	select {
+	case <-recvDone:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("destination did not exit within 5s")
 	}
 }
