@@ -57,6 +57,11 @@ func main() {
 		}
 	}
 	utils.RemoveMarkedFiles()
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		fmt.Println(err)
+		os.Exit(coded.ExitCode())
+	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Println(err)
 		os.Exit(1)

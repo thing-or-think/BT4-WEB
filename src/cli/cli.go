@@ -44,6 +44,10 @@ func RunContext(ctx context.Context) (err error) {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	err = newApp().RunContext(ctx, os.Args)
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		return err
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}
@@ -143,6 +147,28 @@ func newApp() *cli.App {
 			Action:   sshSession,
 		},
 		{
+			Name:        "sync",
+			Usage:       "keep a folder in sync with another computer (one-way)",
+			Description: "run without CROC_SECRET on the source computer; set CROC_SECRET on the destination computer",
+			ArgsUsage:   "<folder>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "code", Aliases: []string{"c"}, Usage: "codephrase used to connect to relay (at least 6 characters)"},
+				&cli.StringFlag{Name: "transport", Value: string(croc.TransportAuto), Usage: "sender file data transport (auto, derp, relay)"},
+				&cli.StringFlag{Name: "exclude", Value: "", Usage: "exclude files if they contain any of the comma separated strings"},
+				&cli.StringFlag{Name: "exclude-file", Value: "", Usage: "exclude files matching any of the comma separated relative paths exactly"},
+				&cli.BoolFlag{Name: "git", Usage: "enable .gitignore respect / don't sync ignored files"},
+				&cli.BoolFlag{Name: "qrcode", Aliases: []string{"qr"}, Usage: "show the web sync URL as a qrcode"},
+				&cli.BoolFlag{Name: "watch", Usage: "keep watching the folder and sync changes continuously"},
+				&cli.BoolFlag{Name: "no-local", Usage: "disable local relay when syncing"},
+				&cli.BoolFlag{Name: "delete", Usage: "delete destination files that are not in the source"},
+				&cli.BoolFlag{Name: "dry-run", Usage: "show planned changes without modifying the destination"},
+				&cli.BoolFlag{Name: "checksum", Usage: "compare file contents by hash even when size and mtime match"},
+				&cli.BoolFlag{Name: "allow-empty-source", Usage: "allow --delete when the source folder is empty"},
+			},
+			HelpName: "croc sync",
+			Action:   syncCommand,
+		},
+		{
 			Name:        "update",
 			Aliases:     []string{"upgrade"},
 			Usage:       "prepare croc-update to install the latest croc release",
@@ -225,6 +251,7 @@ func newApp() *cli.App {
 	app.EnableBashCompletion = true
 	app.HideHelp = false
 	app.HideVersion = false
+	app.ExitErrHandler = func(*cli.Context, error) {}
 	app.Action = func(c *cli.Context) error {
 		if c.Args().First() == "serve" {
 			return errors.New("the web server has moved to the standalone croc-web binary")

@@ -140,6 +140,9 @@ type Options struct {
 	// SyncHook, when set on both peers, runs folder-sync negotiation between
 	// PAKE and file metadata. Nil keeps ordinary send/receive unchanged.
 	SyncHook SyncHook `json:"-"`
+	// SendInstructions, when set, replaces the default receive instructions
+	// printed by Send and skips the web receive URL and QR code.
+	SendInstructions func(secret, relayFlags string) string `json:"-"`
 }
 
 // TransportMode controls how a sender selects the file-data connection after
@@ -1876,10 +1879,6 @@ func (c *Client) Send(filesInfo []FileInfo, emptyFoldersToTransfer []FileInfo, t
 	if c.Options.RelayPassword != models.DEFAULT_PASSPHRASE {
 		flags.WriteString("--pass " + shellQuote(c.Options.RelayPassword) + " ")
 	}
-	webURL := ""
-	if c.Options.Transport != TransportDERP {
-		webURL = webReceiveURL(c.Options.WebOrigin, c.Options.SharedSecret)
-	}
 	clipboardNotice := ""
 	if !c.Options.DisableClipboard {
 		clipboardText := formatClipboardText(c.Options.SharedSecret, flags.String(), c.Options.ExtendedClipboard)
@@ -1891,9 +1890,17 @@ func (c *Client) Send(filesInfo []FileInfo, emptyFoldersToTransfer []FileInfo, t
 		}
 	}
 	output, colorEnabled := termui.Output(os.Stderr)
-	fmt.Fprint(output, formatSendInstructions(c.Options.SharedSecret, flags.String(), webURL, clipboardNotice, colorEnabled))
-	if c.Options.ShowQrCode && webURL != "" {
-		showReceiveCommandQrCode(webURL)
+	if c.Options.SendInstructions != nil {
+		fmt.Fprint(output, c.Options.SendInstructions(c.Options.SharedSecret, flags.String()))
+	} else {
+		webURL := ""
+		if c.Options.Transport != TransportDERP {
+			webURL = webReceiveURL(c.Options.WebOrigin, c.Options.SharedSecret)
+		}
+		fmt.Fprint(output, formatSendInstructions(c.Options.SharedSecret, flags.String(), webURL, clipboardNotice, colorEnabled))
+		if c.Options.ShowQrCode && webURL != "" {
+			showReceiveCommandQrCode(webURL)
+		}
 	}
 	if c.Options.Ask {
 		machid, _ := machineid.ID()
