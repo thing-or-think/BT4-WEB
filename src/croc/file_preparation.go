@@ -28,8 +28,15 @@ func (c *Client) recordPreparationFailure(err error) {
 	c.stop.Cancel()
 }
 
+func sourceFileName(fileInfo FileInfo) string {
+	if fileInfo.SourceName != "" {
+		return fileInfo.SourceName
+	}
+	return fileInfo.Name
+}
+
 func sourceFilePath(fileInfo FileInfo) string {
-	return filepath.Clean(fileInfo.FolderSource + string(os.PathSeparator) + fileInfo.Name)
+	return filepath.Join(fileInfo.FolderSource, sourceFileName(fileInfo))
 }
 
 func sourceInfoMatches(expected FileInfo, before, after os.FileInfo) bool {

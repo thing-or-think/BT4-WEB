@@ -146,8 +146,14 @@ func sourceFileInfos(dir string, m *Manifest) ([]croc.FileInfo, int) {
 		} else {
 			remote += "/"
 		}
+		wireBase := path.Base(e.Path)
+		sourceName := ""
+		if diskBase := filepath.Base(e.DiskPath); diskBase != wireBase {
+			sourceName = diskBase
+		}
 		files = append(files, croc.FileInfo{
-			Name:         filepath.Base(e.DiskPath),
+			Name:         wireBase,
+			SourceName:   sourceName,
 			FolderRemote: remote,
 			FolderSource: filepath.Join(dir, filepath.Dir(e.DiskPath)),
 			Size:         e.Size,
@@ -309,16 +315,8 @@ func (h *crocHook) Ready() (bool, func(croc.FileInfo) bool) {
 		if fi.Name == "" {
 			return false // thư mục rỗng: đích tự tạo
 		}
-		return need[path.Join(fi.FolderRemote, wireName(fi.Name))]
+		return need[path.Join(fi.FolderRemote, fi.Name)]
 	}
-}
-
-// wireName chuẩn hóa tên tệp trên đĩa sang dạng dây (NFC) để so với need.
-func wireName(name string) string {
-	if w, err := NormalizeWirePath(name); err == nil {
-		return w
-	}
-	return name
 }
 
 func (h *crocHook) AllowReceive(p string, size int64, isDir bool) error {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/schollz/croc/v11/src/croc"
 	"github.com/schollz/croc/v11/src/tcp"
+	"golang.org/x/text/unicode/norm"
 )
 
 type testRelay struct {
@@ -250,5 +251,68 @@ func TestIntegrationCancelStopsGoroutines(t *testing.T) {
 	if n := runtime.NumGoroutine(); n > before+2 {
 		buf := make([]byte, 1<<20)
 		t.Fatalf("goroutines %d -> %d\n%s", before, n, buf[:runtime.Stack(buf, true)])
+	}
+}
+
+// TestIntegrationNFDFileName kiểm tra đồng bộ tệp có tên dạng NFD trên đĩa nguồn:
+// croc gửi tên NFC trên dây nhưng mở đúng tệp NFD cục bộ.
+func TestIntegrationNFDFileName(t *testing.T) {
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+	nfdName := "cafe\u0301.txt"
+	nfcName := norm.NFC.String(nfdName)
+	const content = "nfd file content"
+
+	if err := os.WriteFile(filepath.Join(srcDir, nfdName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srcEntries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundNFD := false
+	for _, e := range srcEntries {
+		if e.Name() == nfdName {
+			foundNFD = true
+			break
+		}
+	}
+	if !foundNFD {
+		t.Skip("filesystem normalized NFD filename on disk")
+	}
+
+	relay := startRelay(t)
+
+	// Lượt 1: đồng bộ tệp NFD sang đích.
+	r1 := mustRound(t, runRound(t, relay, srcDir, dstDir, FilterSpec{}, DiffOptions{}, confirmAll))
+	if r1.join.Added != 1 || r1.join.Bytes != int64(len(content)) {
+		t.Fatalf("round 1 result = %+v", r1.join)
+	}
+
+	dstEntries, err := os.ReadDir(dstDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var matchedName string
+	for _, e := range dstEntries {
+		if norm.NFC.String(e.Name()) == nfcName {
+			matchedName = e.Name()
+			break
+		}
+	}
+	if matchedName == "" {
+		t.Fatalf("destination missing %q (entries: %v)", nfcName, dstEntries)
+	}
+	got, err := os.ReadFile(filepath.Join(dstDir, matchedName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != content {
+		t.Fatalf("destination content = %q; want %q", string(got), content)
+	}
+
+	// Lượt 2: không đổi gì -> 0 byte dữ liệu tệp và kế hoạch không có thay đổi.
+	r2 := mustRound(t, runRound(t, relay, srcDir, dstDir, FilterSpec{}, DiffOptions{}, confirmAll))
+	if r2.join.Bytes != 0 || r2.plan == nil || r2.plan.HasChanges() || r2.join.Added+r2.join.Updated != 0 {
+		t.Fatalf("round 2 not idle: %+v", r2.join)
 	}
 }

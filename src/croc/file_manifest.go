@@ -100,6 +100,7 @@ func (h fileInfoManifestHeader) senderInfo(files, emptyFolders []FileInfo) Sende
 
 func fileInfoForWire(info FileInfo) FileInfo {
 	info.FolderSource = ""
+	info.SourceName = ""
 	info.IsIgnored = false
 	return info
 }

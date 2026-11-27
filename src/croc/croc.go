@@ -351,6 +351,10 @@ type FileInfo struct {
 	IsIgnored    bool        `json:"ig,omitempty"`
 	Prepared     bool        `json:"p,omitempty"`
 
+	// SourceName is the local on-disk base name to open when it differs from
+	// Name (for example an NFD filename sent as NFC). Never sent on the wire.
+	SourceName string `json:"-"`
+
 	// declined is set on the receiver when the user refuses to overwrite
 	// or resume the file, so nothing was written for it.
 	declined bool
@@ -3712,10 +3716,7 @@ func (c *Client) updateState(attempt *transferAttemptState) (err error) {
 		c.TotalSent = 0
 		c.CurrentFileIsClosed = false
 		log.Debug("beginning sending comms")
-		pathToFile := path.Join(
-			c.FilesToTransfer[c.FilesToTransferCurrentNum].FolderSource,
-			c.FilesToTransfer[c.FilesToTransferCurrentNum].Name,
-		)
+		pathToFile := sourceFilePath(c.FilesToTransfer[c.FilesToTransferCurrentNum])
 		if err = c.validateSourceUnchanged(c.FilesToTransferCurrentNum); err != nil {
 			return err
 		}
