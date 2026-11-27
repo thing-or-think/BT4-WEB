@@ -57,7 +57,24 @@ const (
 	TypeRelayRamp        Type = "relay-ramp"
 	TypeSSHAuthorize     Type = "ssh-authorize"
 	TypeSSHOffer         Type = "ssh-offer"
+
+	// Folder sync (croc sync). They are exchanged only after PAKE, on the
+	// encrypted control channel, and only when both peers advertise
+	// FeatureFolderSync. Ordinary send/receive never produce them.
+	TypeSyncHello         Type = "sync-hello"
+	TypeSyncManifestStart Type = "sync-manifest-start"
+	TypeSyncManifestBatch Type = "sync-manifest-batch"
+	TypeSyncManifestEnd   Type = "sync-manifest-end"
+	TypeSyncHashRequest   Type = "sync-hash-request"
+	TypeSyncHashResult    Type = "sync-hash-result"
+	TypeSyncNeed          Type = "sync-need"
+	TypeSyncResult        Type = "sync-result"
 )
+
+// FeatureFolderSync is advertised during PAKE only by croc sync. Like other
+// features it travels before encryption, so a relay can tell a sync session
+// from a send session; it carries no paths or metadata.
+const FeatureFolderSync = "folder-sync-v1"
 
 // FeatureSSHRendezvous marks the unencrypted PAKE negotiation for a shared
 // SSH terminal. Relays may use this fixed marker for aggregate telemetry; it

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/schollz/croc/v11/src/comm"
@@ -142,4 +143,25 @@ func TestSend(t *testing.T) {
 		t.Fatalf("receive message: %v", result.err)
 	}
 	assert.Equal(t, want, result.message)
+}
+
+func TestSyncMessagesRoundTrip(t *testing.T) {
+	key, _, err := crypt.New([]byte("pass"), nil)
+	assert.Nil(t, err)
+	for _, typ := range []Type{
+		TypeSyncHello, TypeSyncManifestStart, TypeSyncManifestBatch, TypeSyncManifestEnd,
+		TypeSyncHashRequest, TypeSyncHashResult, TypeSyncNeed, TypeSyncResult,
+	} {
+		assert.True(t, strings.HasPrefix(string(typ), "sync-"), typ)
+		m := Message{Type: typ, Num: 7, Bytes: []byte(`{"seq":7}`)}
+		b, err := Encode(key, m)
+		assert.Nil(t, err)
+		got, err := Decode(key, b)
+		assert.Nil(t, err)
+		assert.Equal(t, m, got)
+		// Without the session key an encrypted sync message cannot be read.
+		_, err = Decode(nil, b)
+		assert.NotNil(t, err)
+	}
+	assert.Equal(t, "folder-sync-v1", FeatureFolderSync)
 }
